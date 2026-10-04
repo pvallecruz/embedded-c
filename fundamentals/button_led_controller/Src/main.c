@@ -21,29 +21,57 @@
 uint32_t RCC_BaseAddress = 0x40023800U;
 uint32_t RCC_OffSet = 0x30U;
 uint32_t GPIOx_BaseAddress = 0x40020C00U;
+uint32_t GPIOx_IDR_OffSet = 0x10U;
 uint32_t GPIOx_BSRR_OffSet = 0x18U;
+uint32_t GPIOA_BaseAddress = 0x40020000U;
+
+
 
 
 void led_init(void);
+void button_init(void);
 void led_on(void);
+void led_off(void);
+uint8_t button_is_pressed(void);
 
 int main(void)
 {
-
 	led_init();
-	led_on();
-	while(1);
+	button_init();
+
+	while(1)
+	{
+		if(button_is_pressed() == 1)
+		{
+			led_on();
+		}
+		else
+		{
+			led_off();
+		}
+	}
+
+
 }
 
 void led_init(void)
 {
-	volatile uint32_t *pRCC_AHB1ENR = (uint32_t*)(RCC_BaseAddress + RCC_OffSet);
-	//Enable clock
-	*pRCC_AHB1ENR |= (1U << 3);
-	volatile uint32_t *pGPIOD_Moder12 = (uint32_t*)(GPIOx_BaseAddress);
+	volatile uint32_t *pRCC_AHB1ENR_GPIODEN = (uint32_t*)(RCC_BaseAddress + RCC_OffSet);
+	*pRCC_AHB1ENR_GPIODEN |= (1U << 3);
 
+	volatile uint32_t *pGPIOD_Moder12 = (uint32_t*)(GPIOx_BaseAddress);
 	*pGPIOD_Moder12 &= ~(3U << 24);
 	*pGPIOD_Moder12 |= (1U << 24);
+
+}
+
+void button_init(void)
+{
+	volatile uint32_t *pRCC_AHB1ENR_GPIOAEN = (uint32_t*)(RCC_BaseAddress + RCC_OffSet);
+	*pRCC_AHB1ENR_GPIOAEN |= (1U << 0);
+
+	volatile uint32_t *pGPIOA_Moder0 = (uint32_t*)(GPIOA_BaseAddress);
+	*pGPIOA_Moder0 &= ~(3U << 0);
 
 }
 
@@ -59,4 +87,14 @@ void led_off(void)
 {
 	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_OffSet);
 	*pGPIOD_BSRR = (1U << 28);
+}
+
+uint8_t button_is_pressed(void)
+{
+	volatile uint32_t *pGPIOA_IDR = (uint32_t*)(GPIOA_BaseAddress +GPIOx_IDR_OffSet);
+	uint32_t GPIOA_IDR_value = *pGPIOA_IDR;
+
+	uint8_t button_state = GPIOA_IDR_value & (1U << 0);
+
+	return button_state;
 }
