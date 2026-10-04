@@ -24,12 +24,18 @@ uint32_t GPIOx_BaseAddress = 0x40020C00U;
 uint32_t GPIOx_IDR_OffSet = 0x10U;
 uint32_t GPIOx_BSRR_OffSet = 0x18U;
 uint32_t GPIOA_BaseAddress = 0x40020000U;
+uint32_t SYST_CSR_Address = 0xE000E010U;
+uint32_t SYST_RVR_Address = 0xE000E014U;
+uint32_t SYST_CVR_Address = 0xE000E018U;
+
+volatile uint32_t system_ticks = 0U;
 
 
 
 
 void led_init(void);
 void button_init(void);
+void systick_init(void);
 void led_on(void);
 void led_off(void);
 uint8_t button_is_pressed(void);
@@ -39,16 +45,46 @@ int main(void)
 	led_init();
 	button_init();
 
+	uint8_t previous_button_state = 0U;
+	uint8_t led_state = 0U;
+	led_off();
+
+	systick_init();
+	uint8_t stable_button_state = 0U;
+	uint32_t last_change_tick = system_ticks;
+
 	while(1)
 	{
-		if(button_is_pressed() == 1)
+		uint8_t current_button_state = button_is_pressed();
+
+		if (current_button_state != previous_button_state)
 		{
-			led_on();
+		    last_change_tick = system_ticks;
 		}
-		else
+
+		if((system_ticks - last_change_tick) >= 20U)
 		{
-			led_off();
+			if(current_button_state != stable_button_state)
+			{
+				stable_button_state = current_button_state;
+				if(stable_button_state == 1)
+				{
+					if(led_state == 0U)
+					{
+						led_on();
+						led_state = 1U;
+					}
+
+					else
+					{
+						led_off();
+						led_state = 0U;
+					}
+
+				}
+			}
 		}
+		previous_button_state = current_button_state;
 	}
 
 
@@ -75,6 +111,19 @@ void button_init(void)
 
 }
 
+void systick_init(void)
+{
+	volatile uint32_t *pSTK_CTRL_Enable = (uint32_t*)(SYST_CSR_Address);
+	*pSTK_CTRL_Enable &= ~(1U << 0);
+	volatile uint32_t *pSTK_LOAD = (uint32_t*)(SYST_RVR_Address);
+	*pSTK_LOAD = 15999U;
+	volatile uint32_t *pSTK_VAL = (uint32_t*)(SYST_CVR_Address);
+	*pSTK_VAL = 0U;
+
+	*pSTK_CTRL_Enable |= (1U << 2) | (1U << 1) | (1U << 0);
+
+}
+
 void led_on(void)
 {
 
@@ -97,4 +146,9 @@ uint8_t button_is_pressed(void)
 	uint8_t button_state = GPIOA_IDR_value & (1U << 0);
 
 	return button_state;
+}
+
+void SysTick_Handler(void)
+{
+	system_ticks += 1;
 }
