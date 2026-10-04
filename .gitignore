@@ -1,0 +1,9 @@
+# macOS Finder files
+.DS_Store
+
+# STM32CubeIDE workspace data
+.metadata/
+
+# Generated build files
+Debug/
+Release/
