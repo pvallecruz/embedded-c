@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 uint32_t RCC_BaseAddress = 0x40023800U;
 uint32_t RCC_OffSet = 0x30U;
@@ -61,6 +62,8 @@ int main(void)
 	uint32_t wait_start_tick = 0U;
 	uint32_t reaction_start_tick = 0U;
 	uint32_t reaction_time_ms = 0U;
+	uint32_t wait_duration_ms = 2000U;
+	uint8_t random_seeded = 0U;
 
 	for(;;)
 	{
@@ -76,6 +79,12 @@ int main(void)
 			case GAME_WAIT_RELEASE:
 				if(button_is_pressed() == 0U)
 				{
+					if(random_seeded == 0U)
+					{
+						srand(system_ticks);
+						random_seeded = 1U;
+					}
+					wait_duration_ms = 2000U + ((uint32_t)rand() % 3001U);
 					wait_start_tick = system_ticks;
 					game_state = GAME_WAITING;
 				}
@@ -87,7 +96,7 @@ int main(void)
 					game_state = GAME_TOO_SOON;
 
 				}
-				else if((system_ticks - wait_start_tick) >= 2000U)
+				else if((system_ticks - wait_start_tick) >= wait_duration_ms)
 				{
 					led_on();
 					reaction_start_tick = system_ticks;
