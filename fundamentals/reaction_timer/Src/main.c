@@ -66,9 +66,33 @@ int main(void)
 	uint8_t random_seeded = 0U;
 	uint32_t best_time_ms = UINT32_MAX;
 	uint8_t ready_message_shown = 0U;
+	uint8_t previous_button_state = 0U;
+	uint8_t stable_button_state = 0U;
+	uint32_t last_change_tick = system_ticks;
+	uint32_t accepted_press_tick = 0U;
 
 	for(;;)
 	{
+		uint8_t current_button_state = button_is_pressed();
+
+		if(current_button_state != previous_button_state)
+		{
+			last_change_tick = system_ticks;
+			previous_button_state = current_button_state;
+		}
+
+		if((system_ticks - last_change_tick) >= 20)
+		{
+			if(current_button_state != stable_button_state)
+			{
+				stable_button_state = current_button_state;
+				if(stable_button_state == 1U)
+				{
+					accepted_press_tick = last_change_tick;
+				}
+			}
+		}
+
 		switch(game_state)
 		{
 			case GAME_READY:
@@ -79,7 +103,7 @@ int main(void)
 
 				}
 
-				if(button_is_pressed() == 1U)
+				if(stable_button_state == 1U)
 				{
 					game_state = GAME_WAIT_RELEASE;
 				}
@@ -87,7 +111,7 @@ int main(void)
 				break;
 
 			case GAME_WAIT_RELEASE:
-				if(button_is_pressed() == 0U)
+				if(stable_button_state == 0U)
 				{
 					if(random_seeded == 0U)
 					{
@@ -102,7 +126,7 @@ int main(void)
 				break;
 
 			case GAME_WAITING:
-				if(button_is_pressed() == 1U)
+				if(stable_button_state == 1U)
 				{
 					game_state = GAME_TOO_SOON;
 
@@ -118,26 +142,36 @@ int main(void)
 				break;
 
 			case GAME_MEASURING:
-				if(button_is_pressed() == 1U)
+				if(stable_button_state == 1U)
 				{
-					reaction_time_ms = system_ticks - reaction_start_tick;
-
-					if(reaction_time_ms < best_time_ms)
+					if ((accepted_press_tick - wait_start_tick) <
+					    (reaction_start_tick - wait_start_tick))
 					{
-						best_time_ms = reaction_time_ms;
-						printf("New best time!\n\n");
+						led_off();
+						game_state = GAME_TOO_SOON;
 					}
+					else
+					{
 
-					printf("Reaction time: %lu ms\n", (unsigned long)reaction_time_ms);
-					printf("Best time: %lu ms\n\n", (unsigned long)best_time_ms);
+						reaction_time_ms = accepted_press_tick - reaction_start_tick;
 
-					led_off();
-					game_state = GAME_RESULT;
+						if(reaction_time_ms < best_time_ms)
+						{
+							best_time_ms = reaction_time_ms;
+							printf("New best time!\n\n");
+						}
+
+						printf("Reaction time: %lu ms\n", (unsigned long)reaction_time_ms);
+						printf("Best time: %lu ms\n\n", (unsigned long)best_time_ms);
+
+						led_off();
+						game_state = GAME_RESULT;
+					}
 				}
 				break;
 
 			case GAME_RESULT:
-				if(button_is_pressed() == 0U)
+				if(stable_button_state == 0U)
 				{
 					ready_message_shown = 0U;
 					game_state = GAME_READY;
@@ -146,7 +180,7 @@ int main(void)
 				break;
 
 			case GAME_TOO_SOON:
-				if(button_is_pressed() == 0U)
+				if(stable_button_state == 0U)
 				{
 					printf("Too soon!\n\n");
 					ready_message_shown = 0U;
