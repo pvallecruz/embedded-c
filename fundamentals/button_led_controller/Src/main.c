@@ -20,9 +20,6 @@
 
 uint32_t RCC_BaseAddress = 0x40023800U;
 uint32_t RCC_OffSet = 0x30U;
-uint32_t SYST_CSR_Address = 0xE000E010U;
-uint32_t SYST_RVR_Address = 0xE000E014U;
-uint32_t SYST_CVR_Address = 0xE000E018U;
 
 volatile uint32_t system_ticks = 0U;
 
@@ -36,8 +33,15 @@ typedef struct {
 	volatile uint32_t BSRR;
 } gpio_registers_t;
 
+typedef struct {
+	volatile uint32_t CSR;
+	volatile uint32_t RVR;
+	volatile uint32_t CVR;
+}sys_tick_t;
+
 gpio_registers_t * const pGPIOD = (gpio_registers_t *)0x40020C00U;
 gpio_registers_t * const pGPIOA = (gpio_registers_t *)0x40020000U;
+sys_tick_t * const pSYSTICK = (sys_tick_t *)0xE000E010U;
 
 void led_init(void);
 void button_init(void);
@@ -117,14 +121,12 @@ void button_init(void)
 
 void systick_init(void)
 {
-	volatile uint32_t *pSTK_CTRL_Enable = (uint32_t*)(SYST_CSR_Address);
-	*pSTK_CTRL_Enable &= ~(1U << 0);
-	volatile uint32_t *pSTK_LOAD = (uint32_t*)(SYST_RVR_Address);
-	*pSTK_LOAD = 15999U;
-	volatile uint32_t *pSTK_VAL = (uint32_t*)(SYST_CVR_Address);
-	*pSTK_VAL = 0U;
 
-	*pSTK_CTRL_Enable |= (1U << 2) | (1U << 1) | (1U << 0);
+	pSYSTICK->CSR &= ~(1U << 0);
+	pSYSTICK->RVR = 15999U;
+	pSYSTICK->CVR = 0U;
+
+	pSYSTICK->CSR |= (1U << 2) | (1U << 1) | (1U << 0);
 
 }
 
