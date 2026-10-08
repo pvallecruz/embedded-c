@@ -49,6 +49,7 @@ void systick_init(void);
 void led_on(void);
 void led_off(void);
 uint8_t button_is_pressed(void);
+void SysTick_Handler(void);
 
 int main(void)
 {
