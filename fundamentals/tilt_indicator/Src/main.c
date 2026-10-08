@@ -26,6 +26,7 @@
 #define LIS3DSH_OUT_X_H_ADDR 	0x29
 #define TILT_THRESHOLD			2000
 #define TILT_RELEASE_THRESHOLD	1500
+#define SPI_TIMEOUT_MS			10U
 
 typedef enum
 {
@@ -33,6 +34,12 @@ typedef enum
 	TILT_LEFT,
 	TILT_RIGHT
 } tilt_state_t;
+
+typedef enum
+{
+	SPI_OK,
+	SPI_TIMEOUT
+} spi_status_t;
 
 uint32_t RCC_BaseAddress = 0x40023800U;
 uint32_t RCC_AHB1_Offset = 0x30U;
@@ -55,18 +62,20 @@ volatile uint32_t system_ticks = 0U;
 
 void sensor_gpio_init(void);
 void spi1_init(void);
-uint8_t spi1_transfer(uint8_t data);
+spi_status_t spi1_transfer(uint8_t data, uint8_t *pReceived);
 void sensor_select(void);
-void sensor_deselect(void);
-uint8_t sensor_read_register(uint8_t register_address);
-void sensor_write_register(uint8_t register_address, uint8_t value);
-int16_t sensor_read_x(void);
+spi_status_t sensor_deselect(void);
+spi_status_t sensor_read_register(uint8_t register_address,
+                                  uint8_t *pValue);
+spi_status_t sensor_write_register(uint8_t register_address, uint8_t value);
+spi_status_t sensor_read_x(int16_t *pX);
 void systick_init(void);
 void SysTick_Handler(void);
 void led_gpio_init(void);
 void leds_show_left(void);
 void leds_show_right(void);
 void leds_show_level(void);
+
 
 
 
@@ -77,15 +86,26 @@ int main(void)
     systick_init();
     led_gpio_init();
 
-    uint8_t sensor_id = sensor_read_register(LIS3DSH_WHO_AM_I_ADDR);
-    printf("Sensor ID: 0x%02X\n", (unsigned int)sensor_id);
+    uint8_t sensor_id;
+    spi_status_t status= sensor_read_register(LIS3DSH_WHO_AM_I_ADDR, &sensor_id);
+    if(status == SPI_TIMEOUT)
+    {
+    	printf("Communication error\n");
+    	for(;;){}
+    }
 
     if(sensor_id != LIS3DSH_WHO_AM_I_VALUE)
     {
     	printf("Unexpected ID\n");
     	for (;;) {}
     }
-    sensor_write_register(LIS3DSH_CTRL_REG4_ADDR, 0x5FU);
+
+    status = sensor_write_register(LIS3DSH_CTRL_REG4_ADDR, 0x5FU);
+    if(status == SPI_TIMEOUT)
+	{
+		printf("Configuration error\n");
+		for(;;){}
+	}
 
 
 
@@ -98,7 +118,14 @@ int main(void)
 		if ((system_ticks - last_sample_tick) >= 100U)
 		{
 			last_sample_tick = system_ticks;
-			x_reading = sensor_read_x();
+			status = sensor_read_x(&x_reading);
+
+			if(status == SPI_TIMEOUT)
+			{
+				leds_show_level();
+				printf("Timeout error\n");
+				for(;;){}
+			}
 
 			if (tilt_state == TILT_LEVEL)
 			{
@@ -189,17 +216,38 @@ void spi1_init(void)
 	*pSPI1_CR1 |= (1U << 6);
 }
 
-uint8_t spi1_transfer(uint8_t data)
+spi_status_t spi1_transfer(uint8_t data, uint8_t *pReceived)
 {
 	volatile uint32_t *pSPI1_SR = (uint32_t*)(SPI1_BaseAddress + SPI1_SR_Offset);
 	volatile uint8_t *pSPI1_DR = (uint8_t*)(SPI1_BaseAddress + SPI1_DR_Offset);
 
-	while((*pSPI1_SR & (1U << 1)) == 0){}
+	uint32_t wait_start_tick = system_ticks;
+
+	while((*pSPI1_SR & (1U << 1)) == 0)
+	{
+		if ((system_ticks - wait_start_tick) >= SPI_TIMEOUT_MS)
+		{
+			return SPI_TIMEOUT;
+
+		}
+
+	}
 	*pSPI1_DR = data;
 
-	while((*pSPI1_SR & (1U << 0)) == 0){}
+	wait_start_tick = system_ticks;
 
-	return *pSPI1_DR;
+	while((*pSPI1_SR & (1U << 0)) == 0)
+	{
+		if ((system_ticks - wait_start_tick) >= SPI_TIMEOUT_MS)
+		{
+			return SPI_TIMEOUT;
+		}
+	}
+
+	*pReceived = *pSPI1_DR;
+	return SPI_OK;
+
+
 }
 
 void sensor_select(void)
@@ -208,39 +256,99 @@ void sensor_select(void)
 	*pGPIOE_BSRR = (1U << 19);
 }
 
-void sensor_deselect(void)
+spi_status_t sensor_deselect(void)
 {
 	volatile uint32_t *pSPI1_SR = (uint32_t*)(SPI1_BaseAddress + SPI1_SR_Offset);
-	while((*pSPI1_SR & (1U << 7)) != 0){}
-
 	volatile uint32_t *pGPIOE_BSRR = (uint32_t*)(GPIOE_BaseAddress + BSRR_Offset);
+
+	uint32_t wait_start_tick = system_ticks;
+
+	while((*pSPI1_SR & (1U << 7)) != 0)
+	{
+		if ((system_ticks - wait_start_tick) >= SPI_TIMEOUT_MS)
+		{
+			*pGPIOE_BSRR = (1U << 3);
+			return SPI_TIMEOUT;
+		}
+
+	}
+
 	*pGPIOE_BSRR = (1U << 3);
+	return SPI_OK;
 }
 
-uint8_t sensor_read_register(uint8_t register_address)
+spi_status_t sensor_read_register(uint8_t register_address,
+                                  uint8_t *pValue)
 {
+	uint8_t discarded_byte;
+
 	sensor_select();
-	spi1_transfer(register_address | (1U << 7));
-	uint8_t register_value = spi1_transfer(0x00U);
-	sensor_deselect();
-	return register_value;
+	spi_status_t status = spi1_transfer(register_address | (1U << 7), &discarded_byte);
+
+	if(status == SPI_TIMEOUT)
+	{
+		sensor_deselect();
+		return status;
+	}
+
+	status = spi1_transfer(0x00U, pValue);
+
+	if(status == SPI_TIMEOUT)
+	{
+		sensor_deselect();
+		return status;
+	}
+
+	return sensor_deselect();
 
 }
 
-void sensor_write_register(uint8_t register_address, uint8_t value)
+spi_status_t sensor_write_register(uint8_t register_address, uint8_t value)
 {
+	uint8_t discarded_byte;
+
 	sensor_select();
-	spi1_transfer(register_address & ~(1U << 7));
-	spi1_transfer(value);
-	sensor_deselect();
+	spi_status_t status = spi1_transfer(register_address & ~(1U << 7), &discarded_byte);
+
+	if(status == SPI_TIMEOUT)
+	{
+		sensor_deselect();
+		return status;
+	}
+
+	status = spi1_transfer(value, &discarded_byte);
+
+	if(status == SPI_TIMEOUT)
+	{
+		sensor_deselect();
+		return status;
+	}
+
+	return sensor_deselect();
+
 }
 
-int16_t sensor_read_x(void)
+spi_status_t sensor_read_x(int16_t *pX)
 {
-	uint8_t low = sensor_read_register(LIS3DSH_OUT_X_L_ADDR);
-	uint8_t high = sensor_read_register(LIS3DSH_OUT_X_H_ADDR);
+	uint8_t low;
+	uint8_t high;
 
-	return (((int16_t)high << 8) | low);
+	spi_status_t status = sensor_read_register(LIS3DSH_OUT_X_L_ADDR, &low);
+
+		if(status == SPI_TIMEOUT)
+		{
+			return status;
+		}
+
+		status = sensor_read_register(LIS3DSH_OUT_X_H_ADDR, &high);
+
+		if(status == SPI_TIMEOUT)
+		{
+			return status;
+		}
+
+	*pX = (int16_t)(((uint16_t)high << 8) | low);
+	return SPI_OK;
 }
 
 void systick_init(void)
@@ -293,7 +401,5 @@ void leds_show_level(void)
 	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_Offset);
 	*pGPIOD_BSRR = (1U << 28) | (1U << 30);
 }
-
-
 
 
