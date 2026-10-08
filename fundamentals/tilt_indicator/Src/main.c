@@ -21,6 +21,18 @@
 
 #define LIS3DSH_WHO_AM_I_ADDR 	0x0FU
 #define LIS3DSH_WHO_AM_I_VALUE 	0x3FU
+#define LIS3DSH_CTRL_REG4_ADDR	0X20U
+#define LIS3DSH_OUT_X_L_ADDR 	0x28
+#define LIS3DSH_OUT_X_H_ADDR 	0x29
+#define TILT_THRESHOLD			2000
+#define TILT_RELEASE_THRESHOLD	1500
+
+typedef enum
+{
+	TILT_LEVEL,
+	TILT_LEFT,
+	TILT_RIGHT
+} tilt_state_t;
 
 uint32_t RCC_BaseAddress = 0x40023800U;
 uint32_t RCC_AHB1_Offset = 0x30U;
@@ -32,6 +44,14 @@ uint32_t BSRR_Offset = 0x18U;
 uint32_t SPI1_BaseAddress = 0x40013000U;
 uint32_t SPI1_SR_Offset = 0x08U;
 uint32_t SPI1_DR_Offset = 0x0CU;
+uint32_t SYST_CSR_Address = 0xE000E010U;
+uint32_t SYST_RVR_Address = 0xE000E014U;
+uint32_t SYST_CVR_Address = 0xE000E018U;
+uint32_t GPIOx_BaseAddress = 0x40020C00U;
+uint32_t GPIOx_BSRR_Offset = 0x18U;
+
+volatile uint32_t system_ticks = 0U;
+
 
 void sensor_gpio_init(void);
 void spi1_init(void);
@@ -39,17 +59,96 @@ uint8_t spi1_transfer(uint8_t data);
 void sensor_select(void);
 void sensor_deselect(void);
 uint8_t sensor_read_register(uint8_t register_address);
+void sensor_write_register(uint8_t register_address, uint8_t value);
+int16_t sensor_read_x(void);
+void systick_init(void);
+void SysTick_Handler(void);
+void led_gpio_init(void);
+void leds_show_left(void);
+void leds_show_right(void);
+void leds_show_level(void);
 
 
 
 int main(void)
 {
-    printf("Tilt indicator starting...\n");
     sensor_gpio_init();
     spi1_init();
+    systick_init();
+    led_gpio_init();
+
     uint8_t sensor_id = sensor_read_register(LIS3DSH_WHO_AM_I_ADDR);
     printf("Sensor ID: 0x%02X\n", (unsigned int)sensor_id);
-	for(;;);
+
+    if(sensor_id != LIS3DSH_WHO_AM_I_VALUE)
+    {
+    	printf("Unexpected ID\n");
+    	for (;;) {}
+    }
+    sensor_write_register(LIS3DSH_CTRL_REG4_ADDR, 0x5FU);
+
+
+
+    int16_t x_reading;
+    uint32_t last_sample_tick = 0U;
+    tilt_state_t tilt_state = TILT_LEVEL;
+
+	for(;;)
+	{
+		if ((system_ticks - last_sample_tick) >= 100U)
+		{
+			last_sample_tick = system_ticks;
+			x_reading = sensor_read_x();
+
+			if (tilt_state == TILT_LEVEL)
+			{
+				if (x_reading < -(TILT_THRESHOLD))
+				{
+					tilt_state = TILT_LEFT;
+					leds_show_left();
+				}
+				else if(x_reading > TILT_THRESHOLD)
+				{
+					tilt_state = TILT_RIGHT;
+					leds_show_right();
+				}
+				else
+				{
+					tilt_state = TILT_LEVEL;
+					leds_show_level();
+				}
+			}
+
+			else if (tilt_state == TILT_RIGHT)
+			{
+				if (x_reading < -(TILT_THRESHOLD))
+				{
+					tilt_state = TILT_LEFT;
+					leds_show_left();
+				}
+				else if(x_reading <= TILT_RELEASE_THRESHOLD)
+				{
+					tilt_state = TILT_LEVEL;
+					leds_show_level();
+				}
+			}
+
+			else if (tilt_state == TILT_LEFT)
+			{
+				if (x_reading > (TILT_THRESHOLD))
+				{
+					tilt_state = TILT_RIGHT;
+					leds_show_right();
+				}
+				else if(x_reading >= -(TILT_RELEASE_THRESHOLD))
+				{
+					tilt_state = TILT_LEVEL;
+					leds_show_level();
+				}
+			}
+		}
+	}
+
 }
 
 void sensor_gpio_init(void)
@@ -127,5 +226,74 @@ uint8_t sensor_read_register(uint8_t register_address)
 	return register_value;
 
 }
+
+void sensor_write_register(uint8_t register_address, uint8_t value)
+{
+	sensor_select();
+	spi1_transfer(register_address & ~(1U << 7));
+	spi1_transfer(value);
+	sensor_deselect();
+}
+
+int16_t sensor_read_x(void)
+{
+	uint8_t low = sensor_read_register(LIS3DSH_OUT_X_L_ADDR);
+	uint8_t high = sensor_read_register(LIS3DSH_OUT_X_H_ADDR);
+
+	return (((int16_t)high << 8) | low);
+}
+
+void systick_init(void)
+{
+	volatile uint32_t *pSTK_CTRL_Enable = (uint32_t*)(SYST_CSR_Address);
+	*pSTK_CTRL_Enable &= ~(1U << 0);
+	volatile uint32_t *pSTK_LOAD = (uint32_t*)(SYST_RVR_Address);
+	*pSTK_LOAD = 15999U;
+	volatile uint32_t *pSTK_VAL = (uint32_t*)(SYST_CVR_Address);
+	*pSTK_VAL = 0U;
+
+	*pSTK_CTRL_Enable |= (1U << 2) | (1U << 1) | (1U << 0);
+
+}
+
+void SysTick_Handler(void)
+{
+	system_ticks += 1;
+}
+
+void led_gpio_init(void)
+{
+	volatile uint32_t *pRCC_AHB1ENR_GPIODEN = (uint32_t*)(RCC_BaseAddress + RCC_AHB1_Offset);
+	*pRCC_AHB1ENR_GPIODEN |= (1U << 3);
+
+	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_Offset);
+	*pGPIOD_BSRR = (1U << 28) | (1U << 30);
+
+	volatile uint32_t *pGPIOD_Moder = (uint32_t*)(GPIOx_BaseAddress);
+	*pGPIOD_Moder &= ~(3U << 24);
+	*pGPIOD_Moder |= (1U << 24);
+	*pGPIOD_Moder &= ~(3U << 28);
+	*pGPIOD_Moder |= (1U << 28);
+
+}
+void leds_show_left(void)
+{
+	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_Offset);
+	*pGPIOD_BSRR = (1U << 12) | (1U << 30);
+}
+
+void leds_show_right(void)
+{
+	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_Offset);
+	*pGPIOD_BSRR = (1U << 28) | (1U << 14);
+}
+
+void leds_show_level(void)
+{
+	volatile uint32_t *pGPIOD_BSRR = (uint32_t*)(GPIOx_BaseAddress + GPIOx_BSRR_Offset);
+	*pGPIOD_BSRR = (1U << 28) | (1U << 30);
+}
+
+
 
 
