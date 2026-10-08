@@ -18,11 +18,6 @@
 
 #include <stdint.h>
 
-uint32_t RCC_BaseAddress = 0x40023800U;
-uint32_t RCC_OffSet = 0x30U;
-
-volatile uint32_t system_ticks = 0U;
-
 typedef struct {
 	volatile uint32_t MODER;
 	volatile uint32_t OTYPER;
@@ -37,11 +32,30 @@ typedef struct {
 	volatile uint32_t CSR;
 	volatile uint32_t RVR;
 	volatile uint32_t CVR;
-}sys_tick_t;
+}systick_registers_t;
+
+typedef struct {
+	volatile uint32_t CR;
+	volatile uint32_t PLLCFGR;
+	volatile uint32_t CFGR;
+	volatile uint32_t CIR;
+	volatile uint32_t AHB1RSTR;
+	volatile uint32_t AHB2RSTR;
+	volatile uint32_t AHB3RSTR;
+	uint32_t RESERVED0;
+	volatile uint32_t APB1RSTR;
+	volatile uint32_t APB2RSTR;
+	uint32_t RESERVED1;
+	uint32_t RESERVED2;
+	volatile uint32_t AHB1ENR;
+}rcc_registers_t;
 
 gpio_registers_t * const pGPIOD = (gpio_registers_t *)0x40020C00U;
 gpio_registers_t * const pGPIOA = (gpio_registers_t *)0x40020000U;
-sys_tick_t * const pSYSTICK = (sys_tick_t *)0xE000E010U;
+systick_registers_t * const pSYSTICK = (systick_registers_t *)0xE000E010U;
+rcc_registers_t * const pRCC = (rcc_registers_t *)0x40023800U;
+
+volatile uint32_t system_ticks = 0U;
 
 void led_init(void);
 void button_init(void);
@@ -102,9 +116,7 @@ int main(void)
 
 void led_init(void)
 {
-	volatile uint32_t *pRCC_AHB1ENR_GPIODEN = (uint32_t*)(RCC_BaseAddress + RCC_OffSet);
-	*pRCC_AHB1ENR_GPIODEN |= (1U << 3);
-
+	pRCC->AHB1ENR |= (1U << 3);
 	pGPIOD->MODER &= ~(3U << 24);
 	pGPIOD->MODER |= (1U << 24);
 
@@ -112,8 +124,7 @@ void led_init(void)
 
 void button_init(void)
 {
-	volatile uint32_t *pRCC_AHB1ENR_GPIOAEN = (uint32_t*)(RCC_BaseAddress + RCC_OffSet);
-	*pRCC_AHB1ENR_GPIOAEN |= (1U << 0);
+	pRCC->AHB1ENR |= (1U << 0);
 
 	pGPIOA->MODER &= ~(3U << 0);
 
