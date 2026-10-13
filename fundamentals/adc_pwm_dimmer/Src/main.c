@@ -20,6 +20,8 @@
 #include "stm32f4xx.h"
 
 void adc1_init(void);
+void adc_startup_delay(void);
+uint16_t adc1_read(void);
 
 int main(void)
 {
@@ -48,4 +50,25 @@ void adc1_init(void) {
 
   ADC->CCR &= ~(ADC_CCR_ADCPRE);
 
+  ADC1->CR2 |= ADC_CR2_ADON;
+
+  adc_startup_delay();
+
+}
+
+void adc_startup_delay(void) {
+  SysTick->CTRL = 0U;
+  SysTick->LOAD = 47U;
+  SysTick->VAL = 0U;
+  SysTick->CTRL = (SysTick_CTRL_CLKSOURCE_Msk) | (SysTick_CTRL_ENABLE_Msk);
+  while((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) == 0){
+  }
+  SysTick->CTRL = 0U;
+}
+
+uint16_t adc1_read(void){
+  ADC1->CR2 |= (ADC_CR2_SWSTART);
+  while((ADC1->SR & ADC_SR_EOC) == 0U){
+  }
+  return ADC1->DR;
 }
