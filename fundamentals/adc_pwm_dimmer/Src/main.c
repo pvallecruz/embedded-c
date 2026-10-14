@@ -22,12 +22,20 @@
 void adc1_init(void);
 void adc_startup_delay(void);
 uint16_t adc1_read(void);
+void led_pwm_init(void);
+
+volatile uint16_t potentiometer_reading = 0U;
 
 int main(void)
 {
   adc1_init();
+  led_pwm_init();
 
-	for(;;);
+  for(;;) {
+    potentiometer_reading = adc1_read();
+    TIM4->CCR1 = (potentiometer_reading * 1000U) / 4095U;
+  }
+
 }
 
 void adc1_init(void) {
@@ -66,9 +74,33 @@ void adc_startup_delay(void) {
   SysTick->CTRL = 0U;
 }
 
-uint16_t adc1_read(void){
+uint16_t adc1_read(void) {
   ADC1->CR2 |= (ADC_CR2_SWSTART);
   while((ADC1->SR & ADC_SR_EOC) == 0U){
   }
   return ADC1->DR;
+}
+
+void led_pwm_init(void) {
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
+  RCC->APB1ENR |= RCC_APB1ENR_TIM4EN;
+  TIM4->CR1 &= ~(TIM_CR1_CEN);
+  TIM4->CR1 &= ~(TIM_CR1_DIR | TIM_CR1_CMS);
+  TIM4->PSC = 15U;
+  TIM4->ARR = 999U;
+  TIM4->CCMR1 &= ~(TIM_CCMR1_CC1S);
+  TIM4->CCMR1 &=~(TIM_CCMR1_OC1M);
+  TIM4->CCMR1 |= (TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1);
+  TIM4->CCMR1 |= TIM_CCMR1_OC1PE;
+  TIM4->CCER &= ~(TIM_CCER_CC1P);
+  TIM4->CCER |= TIM_CCER_CC1E;
+  TIM4->CCR1 = 500U;
+  GPIOD->MODER &= ~(GPIO_MODER_MODER12);
+  GPIOD->MODER |= GPIO_MODER_MODER12_1;
+  GPIOD->AFR[1] &= ~GPIO_AFRH_AFSEL12;
+  GPIOD->AFR[1] |= GPIO_AFRH_AFSEL12_1;
+  GPIOD->OTYPER &= ~(GPIO_OTYPER_OT12);
+  GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPD12);
+  TIM4->EGR = TIM_EGR_UG;
+  TIM4->CR1 |= TIM_CR1_CEN;
 }
