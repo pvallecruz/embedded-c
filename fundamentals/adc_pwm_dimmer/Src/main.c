@@ -32,11 +32,14 @@ void led_pwm_init(void);
 void i2c1_init(void);
 void systick_init(void);
 i2c_status_t i2c1_probe(uint8_t address);
+i2c_status_t i2c1_write_byte(uint8_t address, uint8_t data);
 
 volatile uint16_t potentiometer_reading = 0U;
 volatile uint32_t system_ticks = 0U;
 
 volatile i2c_status_t lcd_probe_status = I2C_TIMEOUT;
+volatile i2c_status_t lcd_write_status = I2C_TIMEOUT;
+
 int main(void)
 {
   adc1_init();
@@ -44,6 +47,9 @@ int main(void)
   led_pwm_init();
   i2c1_init();
   lcd_probe_status = i2c1_probe(0x27U);
+  if (lcd_probe_status == I2C_OK) {
+    lcd_write_status = i2c1_write_byte(0x27U, 0x08U);
+  }
 
   for (;;) {
     potentiometer_reading = adc1_read();
@@ -172,8 +178,8 @@ i2c_status_t i2c1_probe(uint8_t address) {
 
         uint32_t stop_start_tick = system_ticks;
 
-        while((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
-          if((system_ticks - stop_start_tick) >= 10U) {
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
             return I2C_TIMEOUT;
           }
         }
@@ -195,7 +201,7 @@ i2c_status_t i2c1_probe(uint8_t address) {
       uint32_t stop_start_tick = system_ticks;
 
       while ((I2C1->CR1 & I2C_CR1_STOP) != 0) {
-        if((system_ticks - stop_start_tick) >= 10U) {
+        if ((system_ticks - stop_start_tick) >= 10U) {
           return I2C_TIMEOUT;
         }
       }
@@ -206,8 +212,8 @@ i2c_status_t i2c1_probe(uint8_t address) {
     if ((system_ticks - start_tick) >= 10U) {
       uint32_t stop_start_tick = system_ticks;
       I2C1->CR1 |= I2C_CR1_STOP;
-      while((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
-        if((system_ticks - stop_start_tick) >= 10U) {
+      while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+        if ((system_ticks - stop_start_tick) >= 10U) {
           return I2C_TIMEOUT;
         }
       }
@@ -220,11 +226,132 @@ i2c_status_t i2c1_probe(uint8_t address) {
 
   I2C1->CR1 |= I2C_CR1_STOP;
   uint32_t stop_start_tick = system_ticks;
-  while((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
-    if((system_ticks - stop_start_tick) >= 10U) {
+  while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+    if ((system_ticks - stop_start_tick) >= 10U) {
       return I2C_TIMEOUT;
     }
   }
   return I2C_OK;
 
+}
+
+i2c_status_t i2c1_write_byte(uint8_t address, uint8_t data){
+  uint32_t start_tick = system_ticks;
+    while ((I2C1->SR2 & I2C_SR2_BUSY) != 0U) {
+      if ((system_ticks - start_tick) >= 10U) {
+        return I2C_TIMEOUT;
+      }
+    }
+
+    I2C1->CR1 |= I2C_CR1_START;
+
+    start_tick = system_ticks;
+
+    while ((I2C1->SR1 & I2C_SR1_SB) == 0U) {
+      if ((system_ticks - start_tick) >= 10U) {
+        I2C1->CR1 &= ~I2C_CR1_START;
+        if ((I2C1->SR2 & I2C_SR2_MSL) != 0U) {
+          I2C1->CR1 |= I2C_CR1_STOP;
+
+          uint32_t stop_start_tick = system_ticks;
+
+          while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+            if ((system_ticks - stop_start_tick) >= 10U) {
+              return I2C_TIMEOUT;
+            }
+          }
+        }
+        return I2C_TIMEOUT;
+      }
+    }
+
+    I2C1->DR = address << 1;
+
+    start_tick = system_ticks;
+
+
+    while ((I2C1->SR1 & I2C_SR1_ADDR) == 0U) {
+      if ((I2C1->SR1 & I2C_SR1_AF) != 0U) {
+        I2C1->CR1 |= I2C_CR1_STOP;
+        I2C1->SR1 &= ~I2C_SR1_AF;
+
+        uint32_t stop_start_tick = system_ticks;
+
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
+            return I2C_TIMEOUT;
+          }
+        }
+        return I2C_NACK;
+      }
+
+
+      if ((system_ticks - start_tick) >= 10U) {
+        uint32_t stop_start_tick = system_ticks;
+        I2C1->CR1 |= I2C_CR1_STOP;
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
+            return I2C_TIMEOUT;
+          }
+        }
+        return I2C_TIMEOUT;
+      }
+    }
+
+    (void)I2C1->SR1;
+    (void)I2C1->SR2;
+
+    start_tick = system_ticks;
+
+    while ((I2C1->SR1 & I2C_SR1_TXE) == 0) {
+      if (system_ticks - start_tick >= 10U) {
+        uint32_t stop_start_tick = system_ticks;
+        I2C1->CR1 |= I2C_CR1_STOP;
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
+            return I2C_TIMEOUT;
+          }
+        }
+        return I2C_TIMEOUT;
+      }
+    }
+
+    I2C1->DR = data;
+    start_tick = system_ticks;
+
+    while ((I2C1->SR1 & I2C_SR1_BTF) == 0) {
+      if ((I2C1->SR1 & I2C_SR1_AF) != 0U) {
+        I2C1->CR1 |= I2C_CR1_STOP;
+        I2C1->SR1 &= ~I2C_SR1_AF;
+
+        uint32_t stop_start_tick = system_ticks;
+
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
+             return I2C_TIMEOUT;
+          }
+        }
+        return I2C_NACK;
+      }
+      if ((system_ticks - start_tick) >= 10U) {
+        I2C1->CR1 |= I2C_CR1_STOP;
+        uint32_t stop_start_tick = system_ticks;
+
+        while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+          if ((system_ticks - stop_start_tick) >= 10U) {
+            return I2C_TIMEOUT;
+          }
+        }
+        return I2C_TIMEOUT;
+      }
+    }
+
+    I2C1->CR1 |= I2C_CR1_STOP;
+    uint32_t stop_start_tick = system_ticks;
+    while ((I2C1->CR1 & I2C_CR1_STOP) != 0U) {
+      if ((system_ticks - stop_start_tick) >= 10U) {
+        return I2C_TIMEOUT;
+      }
+    }
+    return I2C_OK;
 }
