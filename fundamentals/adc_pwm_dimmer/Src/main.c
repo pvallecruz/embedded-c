@@ -33,12 +33,18 @@ void i2c1_init(void);
 void systick_init(void);
 i2c_status_t i2c1_probe(uint8_t address);
 i2c_status_t i2c1_write_byte(uint8_t address, uint8_t data);
+i2c_status_t lcd_write_nibble(uint8_t nibble, uint8_t rs);
+void delay_ms(uint32_t duration_ms);
+i2c_status_t lcd_init(void);
+i2c_status_t lcd_write_byte(uint8_t value, uint8_t rs);
+i2c_status_t lcd_write_string(const char *text);
 
 volatile uint16_t potentiometer_reading = 0U;
 volatile uint32_t system_ticks = 0U;
 
 volatile i2c_status_t lcd_probe_status = I2C_TIMEOUT;
 volatile i2c_status_t lcd_write_status = I2C_TIMEOUT;
+volatile i2c_status_t lcd_init_status = I2C_TIMEOUT;
 
 int main(void)
 {
@@ -46,9 +52,9 @@ int main(void)
   systick_init();
   led_pwm_init();
   i2c1_init();
-  lcd_probe_status = i2c1_probe(0x27U);
-  if (lcd_probe_status == I2C_OK) {
-    lcd_write_status = i2c1_write_byte(0x27U, 0x08U);
+  lcd_init_status = lcd_init();
+  if (lcd_init_status == I2C_OK) {
+    lcd_write_status = lcd_write_string("LED Dimmer");
   }
 
   for (;;) {
@@ -354,4 +360,103 @@ i2c_status_t i2c1_write_byte(uint8_t address, uint8_t data){
       }
     }
     return I2C_OK;
+}
+
+i2c_status_t lcd_write_nibble(uint8_t nibble, uint8_t rs){
+  uint8_t output = (nibble << 4) | 0x08U | (rs & 0x01U);
+  i2c_status_t status = i2c1_write_byte(0x27U, output);
+  if (status != I2C_OK) {
+    return status;
+  }
+  status = i2c1_write_byte(0x27U, (output | 0x04U));
+  if (status != I2C_OK) {
+    return status;
+  }
+  return i2c1_write_byte(0x27U, output);
+}
+
+void delay_ms(uint32_t duration_ms) {
+  uint32_t start_tick = system_ticks;
+  while ((system_ticks - start_tick) < duration_ms) {
+
+  }
+}
+
+i2c_status_t lcd_init(void) {
+  delay_ms(50U);
+  i2c_status_t status = lcd_write_nibble(0x03U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(6U);
+  status = lcd_write_nibble(0x03U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(6U);
+  status = lcd_write_nibble(0x03U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(2U);
+  status = lcd_write_nibble(0x02U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(2U);
+  status = lcd_write_byte(0x28U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(2U);
+  status = lcd_write_byte(0x08U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(2U);
+  status = lcd_write_byte(0x01U, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(3U);
+  status = lcd_write_byte(0x06U, 0U);
+    if (status != I2C_OK) {
+      return status;
+    }
+
+  delay_ms(2U);
+  status = lcd_write_byte(0x0CU, 0U);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  delay_ms(2U);
+  return I2C_OK;
+}
+
+i2c_status_t lcd_write_byte(uint8_t value, uint8_t rs) {
+  i2c_status_t status = lcd_write_nibble(value >> 4U, rs);
+  if (status != I2C_OK) {
+    return status;
+  }
+
+  return lcd_write_nibble(value & 0x0FU, rs);
+}
+
+i2c_status_t lcd_write_string(const char *text) {
+  while (*text != '\0') {
+    i2c_status_t status = lcd_write_byte(*text, 1U);
+    if (status != I2C_OK) {
+      return status;
+    }
+    text++;
+  }
+  return I2C_OK;
 }
