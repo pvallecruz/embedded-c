@@ -20,9 +20,11 @@
 #include "stm32f4xx.h"
 
 static void usart2_init(void);
+static void usart2_write_char(char character);
 
 int main(void) {
   usart2_init();
+  usart2_write_char('H');
   /* Loop forever */
 	for(;;);
 }
@@ -37,4 +39,11 @@ static void usart2_init(void) {
   GPIOA->AFR[0] |= (GPIO_AFRL_AFSEL3_0 | GPIO_AFRL_AFSEL3_1 | GPIO_AFRL_AFSEL3_2);
   USART2->BRR = (8U << USART_BRR_DIV_Mantissa_Pos) | 11U;
   USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE);
+}
+
+static void usart2_write_char(char character) {
+  while ((USART2->SR & USART_SR_TXE) == 0U) {
+
+  }
+  USART2->DR = character;
 }
