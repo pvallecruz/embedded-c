@@ -22,12 +22,28 @@
 static void usart2_init(void);
 static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
+static char usart2_read_char(void);
 
 int main(void) {
   usart2_init();
   usart2_write_string("Hello, Pedro!\r\n");
-  /* Loop forever */
-	for(;;);
+  char line[64];
+  unsigned int length = 0U;
+
+  for (;;) {
+    char received = usart2_read_char();
+    if (received == '\r' || received == '\n') {
+      line[length] = '\0';
+      usart2_write_string("\r\nReceived: ");
+      usart2_write_string(line);
+      usart2_write_string("\r\n");
+      length = 0U;
+    } else if (length < 63U) {
+      line[length] = received;
+      length++;
+      usart2_write_char(received);
+    }
+  }
 }
 
 static void usart2_init(void) {
@@ -39,7 +55,7 @@ static void usart2_init(void) {
   GPIOA->AFR[0] |= (GPIO_AFRL_AFSEL2_0 | GPIO_AFRL_AFSEL2_1 | GPIO_AFRL_AFSEL2_2);
   GPIOA->AFR[0] |= (GPIO_AFRL_AFSEL3_0 | GPIO_AFRL_AFSEL3_1 | GPIO_AFRL_AFSEL3_2);
   USART2->BRR = (8U << USART_BRR_DIV_Mantissa_Pos) | 11U;
-  USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE);
+  USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE | USART_CR1_RE);
 }
 
 static void usart2_write_char(char character) {
@@ -54,4 +70,11 @@ static void usart2_write_string(const char *text) {
     usart2_write_char(*text);
     text++;
   }
+}
+
+static char usart2_read_char(void) {
+  while ((USART2->SR & USART_SR_RXNE) == 0U) {
+
+  }
+  return (char) USART2->DR;
 }
