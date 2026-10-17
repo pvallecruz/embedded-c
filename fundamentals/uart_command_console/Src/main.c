@@ -30,12 +30,15 @@ int main(void) {
   usart2_write_string("Hello, Pedro!\r\n");
   char line[64];
   unsigned int length = 0U;
+  unsigned int line_overflow = 0U;
 
   for (;;) {
     char received = usart2_read_char();
     if (received == '\r' || received == '\n') {
       line[length] = '\0';
-      if (length > 0U) {
+      if (line_overflow != 0U) {
+          usart2_write_string("\r\nError: line too long\r\n");
+      } else if (length > 0U) {
         if (strcmp(line, "help") == 0) {
             usart2_write_string("\r\nCommands: help\r\n");
         } else {
@@ -43,6 +46,7 @@ int main(void) {
         }
       }
       length = 0U;
+      line_overflow = 0U;
     } else if (received == '\b' || received == 127) {
         if (length > 0U) {
             length--;
@@ -52,6 +56,8 @@ int main(void) {
       line[length] = received;
       length++;
       usart2_write_char(received);
+    } else {
+        line_overflow = 1U;
     }
   }
 }
