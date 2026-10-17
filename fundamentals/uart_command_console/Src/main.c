@@ -17,6 +17,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 #include "stm32f4xx.h"
 
 static void usart2_init(void);
@@ -34,9 +35,11 @@ int main(void) {
     char received = usart2_read_char();
     if (received == '\r' || received == '\n') {
       line[length] = '\0';
-      usart2_write_string("\r\nReceived: ");
-      usart2_write_string(line);
-      usart2_write_string("\r\n");
+      if (strcmp(line, "help") == 0) {
+          usart2_write_string("\r\nCommands: help\r\n");
+      } else {
+          usart2_write_string("\r\nUnknown command\r\n");
+      }
       length = 0U;
     } else if (length < 63U) {
       line[length] = received;
