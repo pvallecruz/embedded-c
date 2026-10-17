@@ -43,6 +43,11 @@ int main(void) {
         }
       }
       length = 0U;
+    } else if (received == '\b' || received == 127) {
+        if (length > 0U) {
+            length--;
+            usart2_write_string("\b \b");
+        }
     } else if (length < 63U) {
       line[length] = received;
       length++;
