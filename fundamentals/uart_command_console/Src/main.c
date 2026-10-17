@@ -24,6 +24,7 @@ static void usart2_init(void);
 static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
 static char usart2_read_char(void);
+static void process_command(const char *command);
 
 int main(void) {
   usart2_init();
@@ -39,11 +40,7 @@ int main(void) {
       if (line_overflow != 0U) {
           usart2_write_string("\r\nError: line too long\r\n");
       } else if (length > 0U) {
-        if (strcmp(line, "help") == 0) {
-            usart2_write_string("\r\nCommands: help\r\n");
-        } else {
-            usart2_write_string("\r\nUnknown command\r\n");
-        }
+        process_command(line);
       }
       length = 0U;
       line_overflow = 0U;
@@ -93,4 +90,12 @@ static char usart2_read_char(void) {
 
   }
   return (char) USART2->DR;
+}
+
+static void process_command(const char *command) {
+  if (strcmp(command, "help") == 0) {
+      usart2_write_string("\r\nCommands: help\r\n");
+  } else {
+      usart2_write_string("\r\nUnknown command\r\n");
+  }
 }
