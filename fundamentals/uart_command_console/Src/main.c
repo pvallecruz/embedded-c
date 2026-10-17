@@ -35,10 +35,12 @@ int main(void) {
     char received = usart2_read_char();
     if (received == '\r' || received == '\n') {
       line[length] = '\0';
-      if (strcmp(line, "help") == 0) {
-          usart2_write_string("\r\nCommands: help\r\n");
-      } else {
-          usart2_write_string("\r\nUnknown command\r\n");
+      if (length > 0U) {
+        if (strcmp(line, "help") == 0) {
+            usart2_write_string("\r\nCommands: help\r\n");
+        } else {
+            usart2_write_string("\r\nUnknown command\r\n");
+        }
       }
       length = 0U;
     } else if (length < 63U) {
