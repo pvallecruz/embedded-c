@@ -21,10 +21,11 @@
 
 static void usart2_init(void);
 static void usart2_write_char(char character);
+static void usart2_write_string(const char *text);
 
 int main(void) {
   usart2_init();
-  usart2_write_char('H');
+  usart2_write_string("Hello, Pedro!\r\n");
   /* Loop forever */
 	for(;;);
 }
@@ -46,4 +47,11 @@ static void usart2_write_char(char character) {
 
   }
   USART2->DR = character;
+}
+
+static void usart2_write_string(const char *text) {
+  while (*text != '\0') {
+    usart2_write_char(*text);
+    text++;
+  }
 }
