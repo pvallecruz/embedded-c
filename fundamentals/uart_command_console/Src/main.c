@@ -18,17 +18,18 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include "stm32f4xx.h"
 
 static void usart2_init(void);
 static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
 static char usart2_read_char(void);
-static void process_command(const char *command);
+static void process_command(char *command);
 static void led_init(void);
-static void led_on(void);
-static void led_off(void);
-static uint8_t led_status(void);
+static void led_pin_on(unsigned int pin);
+static void led_pin_off(unsigned int pin);
+static uint8_t led_pin_status(unsigned int pin);
 
 int main(void) {
   usart2_init();
@@ -97,48 +98,89 @@ static char usart2_read_char(void) {
   return (char) USART2->DR;
 }
 
-static void process_command(const char *command) {
+static void process_command(char *command) {
   if (strcmp(command, "help") == 0) {
-    usart2_write_string("\r\nCommands: help, led on, led off, led status, led toggle\r\n");
-  } else if (strcmp(command, "led on") == 0) {
-    led_on();
-    usart2_write_string("\r\nLED on\r\n");
-  } else if (strcmp(command, "led off") == 0) {
-      led_off();
-      usart2_write_string("\r\nLED off\r\n");
-  } else if (strcmp(command, "led status") == 0) {
-      if (led_status()) {
-        usart2_write_string("\r\nLED on\r\n");
-      } else {
-        usart2_write_string("\r\nLED off\r\n");
-      }
-  } else if (strcmp(command, "led toggle") == 0) {
-        if (led_status()) {
-          led_off();
-          usart2_write_string("\r\nLED off\r\n");
-        } else {
-          led_on();
-          usart2_write_string("\r\nLED on\r\n");
-        }
+    usart2_write_string("\r\nCommands: help, led <12-15> <on|off|status|toggle>\r\n");
   } else {
+    char *name = strtok(command, " ");
+    char *pin_text = strtok(NULL, " ");
+    char *action = strtok(NULL, " ");
+    char *extra = strtok(NULL, " ");
+    if (name == NULL || pin_text == NULL ||
+      action == NULL || extra != NULL) {
+      usart2_write_string("\r\nUsage: led <12-15> <on|off|status|toggle>\r\n");
+      return;
+    }
+    if (strcmp(name, "led") != 0) {
       usart2_write_string("\r\nUnknown command\r\n");
+      return;
+    }
+    char *end;
+    long pin = strtol(pin_text, &end, 10);
+    if (end == pin_text || *end != '\0' || pin < 12 || pin > 15) {
+      usart2_write_string("\r\nError: pin must be 12-15\r\n");
+      return;
+    }
+    if ((strcmp(action, "on") == 0U)) {
+      led_pin_on((unsigned int)pin);
+      usart2_write_string("\r\nLED ");
+      usart2_write_string(pin_text);
+      usart2_write_string(" on\r\n");
+    } else if ((strcmp(action, "off") == 0U)) {
+      led_pin_off((unsigned int)pin);
+      usart2_write_string("\r\nLED ");
+      usart2_write_string(pin_text);
+      usart2_write_string(" off\r\n");
+    } else if ((strcmp(action, "status") == 0U)) {
+      usart2_write_string("\r\nLED ");
+      usart2_write_string(pin_text);
+      if (led_pin_status((unsigned int)pin) == 1U) {
+        usart2_write_string(" on\r\n");
+      } else {
+        usart2_write_string(" off\r\n");
+      }
+    } else if ((strcmp(action, "toggle") == 0U)) {
+      usart2_write_string("\r\nLED ");
+      usart2_write_string(pin_text);
+      if (led_pin_status((unsigned int)pin) == 1U) {
+        led_pin_off((unsigned int)pin);
+        usart2_write_string(" off\r\n");
+      } else {
+        led_pin_on((unsigned int)pin);
+        usart2_write_string(" on\r\n");
+      }
+    } else {
+      usart2_write_string("\r\nUnknown command\r\n");
+    }
   }
 }
 
 static void led_init(void) {
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
-  GPIOD->MODER &= ~(GPIO_MODER_MODER12);
-  GPIOD->MODER |= GPIO_MODER_MODER12_0;
+  GPIOD->MODER &= ~(GPIO_MODER_MODER12 | GPIO_MODER_MODER13 | GPIO_MODER_MODER14 |
+                    GPIO_MODER_MODER15);
+  GPIOD->MODER |= (GPIO_MODER_MODER12_0 | GPIO_MODER_MODER13_0 | GPIO_MODER_MODER14_0 |
+                   GPIO_MODER_MODER15_0);
 }
 
-static void led_on(void) {
-  GPIOD->BSRR = GPIO_BSRR_BS12;
+static uint8_t led_pin_status(unsigned int pin) {
+  if ((pin >= 12) && (pin <=15)) {
+    if ((GPIOD->ODR & (1U << pin)) != 0U) {
+      return 1U;
+    }
+  }
+  return 0U;
 }
 
-static void led_off(void) {
-  GPIOD->BSRR = GPIO_BSRR_BR12;
+static void led_pin_on(unsigned int pin) {
+  if ((pin >= 12) && (pin <=15)) {
+    GPIOD->BSRR = (1U << pin);
+  }
 }
 
-static uint8_t led_status(void) {
-  return ((GPIOD->ODR & GPIO_ODR_OD12) != 0U);
+static void led_pin_off(unsigned int pin) {
+  if ((pin >= 12) && (pin <=15)) {
+    GPIOD->BSRR = (1U << (pin + 16));
+  }
 }
+
