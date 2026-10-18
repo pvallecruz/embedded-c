@@ -11,7 +11,6 @@ This collection documents my progress with register-level C programming on the S
 | [Button-Controlled LED Controller](button_led_controller/README.md) | GPIO, bit manipulation, SysTick, state tracking, and debouncing | One LED toggle per debounced press; manually tested on hardware |
 | [Reaction Timer](reaction_timer/README.md) | State machines, elapsed-time measurement, pseudorandom delays, debouncing, and SWV output | Replayable game with early-press rejection and best-time tracking; manually tested on hardware |
 | [SPI Tilt Indicator](tilt_indicator/README.md) | SPI, signed sensor readings, timed sampling, hysteresis, and communication timeouts | Left/right LED feedback with startup validation; hardware behavior and simulated failure paths manually tested |
-
 | [ADC/PWM LED Dimmer](adc_pwm_dimmer/README.md) | CMSIS registers, ADC, PWM, I²C, and LCD feedback | Knob-controlled LED with percentage display tested on hardware; review refinements awaiting regression test |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
