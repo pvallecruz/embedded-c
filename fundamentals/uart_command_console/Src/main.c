@@ -25,9 +25,14 @@ static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
 static char usart2_read_char(void);
 static void process_command(const char *command);
+static void led_init(void);
+static void led_on(void);
+static void led_off(void);
+static uint8_t led_status(void);
 
 int main(void) {
   usart2_init();
+  led_init();
   usart2_write_string("Hello, Pedro!\r\n");
   char line[64];
   unsigned int length = 0U;
@@ -94,8 +99,46 @@ static char usart2_read_char(void) {
 
 static void process_command(const char *command) {
   if (strcmp(command, "help") == 0) {
-      usart2_write_string("\r\nCommands: help\r\n");
+    usart2_write_string("\r\nCommands: help, led on, led off, led status, led toggle\r\n");
+  } else if (strcmp(command, "led on") == 0) {
+    led_on();
+    usart2_write_string("\r\nLED on\r\n");
+  } else if (strcmp(command, "led off") == 0) {
+      led_off();
+      usart2_write_string("\r\nLED off\r\n");
+  } else if (strcmp(command, "led status") == 0) {
+      if (led_status()) {
+        usart2_write_string("\r\nLED on\r\n");
+      } else {
+        usart2_write_string("\r\nLED off\r\n");
+      }
+  } else if (strcmp(command, "led toggle") == 0) {
+        if (led_status()) {
+          led_off();
+          usart2_write_string("\r\nLED off\r\n");
+        } else {
+          led_on();
+          usart2_write_string("\r\nLED on\r\n");
+        }
   } else {
       usart2_write_string("\r\nUnknown command\r\n");
   }
+}
+
+static void led_init(void) {
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
+  GPIOD->MODER &= ~(GPIO_MODER_MODER12);
+  GPIOD->MODER |= GPIO_MODER_MODER12_0;
+}
+
+static void led_on(void) {
+  GPIOD->BSRR = GPIO_BSRR_BS12;
+}
+
+static void led_off(void) {
+  GPIOD->BSRR = GPIO_BSRR_BR12;
+}
+
+static uint8_t led_status(void) {
+  return ((GPIOD->ODR & GPIO_ODR_OD12) != 0U);
 }
