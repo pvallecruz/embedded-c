@@ -28,6 +28,8 @@ static volatile unsigned int rx_head = 0U;
 static volatile unsigned int rx_tail = 0U;
 static volatile uint32_t rx_dropped_count = 0U;
 static volatile uint32_t rx_overrun_count = 0U;
+static volatile uint32_t rx_framing_count = 0U;
+static volatile uint32_t rx_noise_count = 0U;
 
 static void usart2_init(void);
 static void usart2_write_char(char character);
@@ -49,6 +51,8 @@ int main(void) {
   unsigned int line_overflow = 0U;
   uint32_t last_dropped_count = 0U;
   uint32_t last_overrun_count = 0U;
+  uint32_t last_framing_count = 0U;
+  uint32_t last_noise_count = 0U;
   unsigned int discard_line = 0U;
 
   for (;;) {
@@ -56,9 +60,13 @@ int main(void) {
     __disable_irq();
 
     if ((rx_dropped_count != last_dropped_count) ||
-        (rx_overrun_count != last_overrun_count)) {
+        (rx_overrun_count != last_overrun_count) ||
+        (rx_framing_count != last_framing_count) ||
+        (rx_noise_count != last_noise_count)) {
         last_dropped_count = rx_dropped_count;
         last_overrun_count = rx_overrun_count;
+        last_framing_count = rx_framing_count;
+        last_noise_count = rx_noise_count;
 
         rx_tail = rx_head;
         length = 0U;
@@ -220,10 +228,19 @@ static void led_pin_off(unsigned int pin) {
 
 void USART2_IRQHandler(void) {
   uint32_t status = USART2->SR;
-  if (status & (USART_SR_RXNE | USART_SR_ORE)) {
+  if (status & (USART_SR_RXNE | USART_SR_ORE | USART_SR_FE | USART_SR_NE)) {
     char received = (char)USART2->DR;
     if (status & USART_SR_ORE) {
         rx_overrun_count++;
+    }
+    if (status & USART_SR_FE) {
+        rx_framing_count++;
+    }
+    if (status & USART_SR_NE) {
+        rx_noise_count++;
+    }
+
+    if (status & (USART_SR_ORE | USART_SR_FE | USART_SR_NE)) {
         return;
     }
     unsigned int next_head = (rx_head + 1U) % RX_BUFFER_SIZE;
