@@ -21,15 +21,24 @@
 #include <stdlib.h>
 #include "stm32f4xx.h"
 
+#define RX_BUFFER_SIZE 64U
+
+static volatile char rx_buffer[RX_BUFFER_SIZE];
+static volatile unsigned int rx_head = 0U;
+static volatile unsigned int rx_tail = 0U;
+static volatile uint32_t rx_dropped_count = 0U;
+static volatile uint32_t rx_overrun_count = 0U;
+
 static void usart2_init(void);
 static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
-static char usart2_read_char(void);
 static void process_command(char *command);
 static void led_init(void);
 static void led_pin_on(unsigned int pin);
 static void led_pin_off(unsigned int pin);
 static uint8_t led_pin_status(unsigned int pin);
+void USART2_IRQHandler(void);
+static uint8_t usart2_try_read_char(char *character);
 
 int main(void) {
   usart2_init();
@@ -38,9 +47,39 @@ int main(void) {
   char line[64];
   unsigned int length = 0U;
   unsigned int line_overflow = 0U;
+  uint32_t last_dropped_count = 0U;
+  uint32_t last_overrun_count = 0U;
+  unsigned int discard_line = 0U;
 
   for (;;) {
-    char received = usart2_read_char();
+    uint32_t saved_primask = __get_PRIMASK();
+    __disable_irq();
+
+    if ((rx_dropped_count != last_dropped_count) ||
+        (rx_overrun_count != last_overrun_count)) {
+        last_dropped_count = rx_dropped_count;
+        last_overrun_count = rx_overrun_count;
+
+        rx_tail = rx_head;
+        length = 0U;
+        line_overflow = 0U;
+        discard_line = 1U;
+    }
+    char received;
+    uint8_t has_character = usart2_try_read_char(&received);
+
+    __set_PRIMASK(saved_primask);
+
+    if (has_character == 0U) {
+        continue;
+    }
+    if (discard_line != 0U) {
+        if (received == '\r' || received == '\n') {
+            discard_line = 0U;
+            usart2_write_string("\r\nError: receive data lost; retype command\r\n");
+        }
+        continue;
+    }
     if (received == '\r' || received == '\n') {
       line[length] = '\0';
       if (line_overflow != 0U) {
@@ -75,6 +114,8 @@ static void usart2_init(void) {
   GPIOA->AFR[0] |= (GPIO_AFRL_AFSEL3_0 | GPIO_AFRL_AFSEL3_1 | GPIO_AFRL_AFSEL3_2);
   USART2->BRR = (8U << USART_BRR_DIV_Mantissa_Pos) | 11U;
   USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE | USART_CR1_RE);
+  USART2->CR1 |= USART_CR1_RXNEIE;
+  NVIC_EnableIRQ(USART2_IRQn);
 }
 
 static void usart2_write_char(char character) {
@@ -89,13 +130,6 @@ static void usart2_write_string(const char *text) {
     usart2_write_char(*text);
     text++;
   }
-}
-
-static char usart2_read_char(void) {
-  while ((USART2->SR & USART_SR_RXNE) == 0U) {
-
-  }
-  return (char) USART2->DR;
 }
 
 static void process_command(char *command) {
@@ -182,5 +216,32 @@ static void led_pin_off(unsigned int pin) {
   if ((pin >= 12) && (pin <=15)) {
     GPIOD->BSRR = (1U << (pin + 16));
   }
+}
+
+void USART2_IRQHandler(void) {
+  uint32_t status = USART2->SR;
+  if (status & (USART_SR_RXNE | USART_SR_ORE)) {
+    char received = (char)USART2->DR;
+    if (status & USART_SR_ORE) {
+        rx_overrun_count++;
+        return;
+    }
+    unsigned int next_head = (rx_head + 1U) % RX_BUFFER_SIZE;
+    if (next_head != rx_tail) {
+        rx_buffer[rx_head] = received;
+        rx_head = next_head;
+    } else {
+        rx_dropped_count++;
+    }
+  }
+}
+
+static uint8_t usart2_try_read_char(char *character) {
+  if (rx_head == rx_tail) {
+    return 0U;
+  }
+    *character = rx_buffer[rx_tail];
+    rx_tail = (rx_tail + 1U) % RX_BUFFER_SIZE;
+    return 1U;
 }
 
