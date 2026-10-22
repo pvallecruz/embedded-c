@@ -12,6 +12,7 @@ This collection documents my progress with register-level C programming on the S
 | [Reaction Timer](reaction_timer/README.md) | State machines, elapsed-time measurement, pseudorandom delays, debouncing, and SWV output | Replayable game with early-press rejection and best-time tracking; manually tested on hardware |
 | [SPI Tilt Indicator](tilt_indicator/README.md) | SPI, signed sensor readings, timed sampling, hysteresis, and communication timeouts | Left/right LED feedback with startup validation; hardware behavior and simulated failure paths manually tested |
 | [ADC/PWM LED Dimmer](adc_pwm_dimmer/README.md) | CMSIS registers, ADC, PWM, I²C, and LCD feedback | Knob-controlled LED with percentage display tested on hardware; review refinements awaiting regression test |
+| [UART Command Console](uart_command_console/README.md) | USART2 interrupts, circular buffering, command parsing, and GPIO control | Four-LED commands and regression checks passed on hardware; overrun/queue-full recovery tested, framing/noise recovery simulated |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
 
@@ -24,6 +25,8 @@ Each project README contains its hardware setup, implementation details, run ins
 - [x] Build and verify an SPI tilt indicator with hysteresis and communication timeouts
 - [x] Build an ADC/PWM dimmer with LCD percentage feedback
 - [ ] Retest the dimmer after review refinements
+- [x] Build and verify a UART console with interrupt-driven reception and validated LED commands
+- [ ] Build a breadboard traffic light with external LEDs and a pedestrian button
 - [ ] Add ADC timeout handling and organize reusable peripheral drivers
 
 ## Learning approach
