@@ -28,6 +28,7 @@ typedef enum {
 #define RED_LED_PIN     7U
 #define YELLOW_LED_PIN  8U
 #define GREEN_LED_PIN   9U
+#define PEDESTRIAN_LED_PIN 11U
 
 void traffic_light_init(void);
 void button_init(void);
@@ -75,6 +76,8 @@ int main(void) {
       case TRAFFIC_RED:
         if ((now - state_started) >= 5000U) {
             traffic_light_off(RED_LED_PIN);
+            traffic_light_off(PEDESTRIAN_LED_PIN);
+            pedestrian_requested = 0U;
             traffic_light_on(GREEN_LED_PIN);
             state = TRAFFIC_GREEN;
             state_started = now;
@@ -89,13 +92,15 @@ int main(void) {
           traffic_light_on(YELLOW_LED_PIN);
           state = TRAFFIC_YELLOW;
           state_started = now;
-          pedestrian_requested = 0U;
         }
         break;
 
       case TRAFFIC_YELLOW:
         if ((now - state_started) >= 2000U) {
           traffic_light_off(YELLOW_LED_PIN);
+          if (pedestrian_requested == 1U) {
+            traffic_light_on(PEDESTRIAN_LED_PIN);
+          }
           traffic_light_on(RED_LED_PIN);
           state = TRAFFIC_RED;
           state_started = now;
@@ -107,8 +112,10 @@ int main(void) {
 
 void traffic_light_init(void) {
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN;
-  GPIOE->MODER &= ~(GPIO_MODER_MODER7 | GPIO_MODER_MODER8 | GPIO_MODER_MODER9);
-  GPIOE->MODER |= (GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0);
+  GPIOE->MODER &= ~(GPIO_MODER_MODER7 | GPIO_MODER_MODER8 |
+                    GPIO_MODER_MODER9 | GPIO_MODER_MODER11);
+  GPIOE->MODER |= (GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 |
+                   GPIO_MODER_MODER9_0 | GPIO_MODER_MODER11_0);
 }
 
 void button_init(void) {
@@ -118,13 +125,15 @@ void button_init(void) {
 }
 
 static void traffic_light_on(unsigned int pin) {
-  if ((pin >= RED_LED_PIN) && (pin <= GREEN_LED_PIN)) {
+  if (((pin >= RED_LED_PIN) && (pin <= GREEN_LED_PIN)) ||
+       (pin == PEDESTRIAN_LED_PIN)) {
     GPIOE->BSRR = (1U << pin);
   }
 }
 
 static void traffic_light_off(unsigned int pin) {
-  if ((pin >= RED_LED_PIN) && (pin <= GREEN_LED_PIN)) {
+  if (((pin >= RED_LED_PIN) && (pin <= GREEN_LED_PIN)) ||
+       (pin == PEDESTRIAN_LED_PIN)) {
     GPIOE->BSRR = (1U << (pin + 16U));
   }
 }
