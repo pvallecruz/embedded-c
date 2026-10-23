@@ -30,6 +30,7 @@ typedef enum {
 #define GREEN_LED_PIN   9U
 
 void traffic_light_init(void);
+void button_init(void);
 static void traffic_light_on(unsigned int pin);
 static void traffic_light_off(unsigned int pin);
 static volatile uint32_t system_ticks = 0U;
@@ -37,18 +38,39 @@ void SysTick_Handler(void);
 
 int main(void) {
   traffic_light_init();
+  button_init();
+
+  uint32_t button_raw = (GPIOE->IDR >> 10) & 1U;
+  uint32_t button_stable = button_raw;
+  uint32_t button_changed_at = system_ticks;
 
   if (SysTick_Config(16000U) != 0U) {
-      for (;;) {
+    for (;;) {
           /* Stop if the requested tick interval is invalid. */
       }
   }
   traffic_state_t state = TRAFFIC_RED;
   uint32_t state_started = system_ticks;
   traffic_light_on(RED_LED_PIN);
+  unsigned int pedestrian_requested = 0U;
 
   for (;;) {
     uint32_t now = system_ticks;
+    uint32_t button_sample = (GPIOE->IDR >> 10) & 1U;
+    if (button_sample != button_raw) {
+      button_raw = button_sample;
+      button_changed_at = now;
+    }
+
+    if ((button_raw != button_stable) &&
+       ((now - button_changed_at) >= 20U)) {
+      button_stable = button_raw;
+      if ((button_stable == 0U) && (state == TRAFFIC_GREEN)){
+        pedestrian_requested = 1U;
+
+      }
+    }
+
     switch (state) {
       case TRAFFIC_RED:
         if ((now - state_started) >= 5000U) {
@@ -60,11 +82,14 @@ int main(void) {
         break;
 
       case TRAFFIC_GREEN:
-        if ((now - state_started) >= 5000U) {
+        if (((now - state_started) >= 5000U) ||
+           ((pedestrian_requested == 1U) &&
+           ((now - state_started) >= 2000U))) {
           traffic_light_off(GREEN_LED_PIN);
           traffic_light_on(YELLOW_LED_PIN);
           state = TRAFFIC_YELLOW;
           state_started = now;
+          pedestrian_requested = 0U;
         }
         break;
 
@@ -84,6 +109,12 @@ void traffic_light_init(void) {
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN;
   GPIOE->MODER &= ~(GPIO_MODER_MODER7 | GPIO_MODER_MODER8 | GPIO_MODER_MODER9);
   GPIOE->MODER |= (GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0);
+}
+
+void button_init(void) {
+  GPIOE->MODER &= ~(GPIO_MODER_MODER10);
+  GPIOE->PUPDR &= ~(GPIO_PUPDR_PUPDR10);
+  GPIOE->PUPDR |= GPIO_PUPDR_PUPDR10_0;
 }
 
 static void traffic_light_on(unsigned int pin) {
