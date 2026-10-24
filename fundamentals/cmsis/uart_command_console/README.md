@@ -160,4 +160,4 @@ This project grew from transmitting one character to parsing validated commands 
 
 Developed incrementally through hands-on implementation, guided review, and testing on the board.
 
-[Back to Embedded C Fundamentals](../README.md)
+[Back to Embedded C Fundamentals](../../README.md)

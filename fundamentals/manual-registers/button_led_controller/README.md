@@ -5,7 +5,7 @@ A small application that turns the onboard green LED on or off with each press o
 
 The application configures GPIO and SysTick through memory-mapped registers, without HAL calls in the application code. STM32CubeIDE supplies the project, startup, and runtime support files.
 
-**[Explore the project](./) · [Read the application code](Src/main.c)**
+**[Explore the project](.) · [Read the application code](Src/main.c)**
 
 ## Hardware and tools
 
@@ -84,4 +84,4 @@ These are manual functional checks. The exact tick period has not been independe
 - [ ] Pause and resume patterns with a long press
 
 
-[Back to Embedded C Fundamentals](../README.md)
+[Back to Embedded C Fundamentals](../../README.md)

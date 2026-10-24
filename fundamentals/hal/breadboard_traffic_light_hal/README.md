@@ -2,7 +2,7 @@
 
 **Author: Pedro Valle-Cruz**
 
-A nonblocking STM32F407 traffic light with a debounced pedestrian button and a white crossing indicator, implemented with STM32Cube HAL. This separate exercise reproduces the behavior of the [CMSIS traffic light](../breadboard_traffic_light/README.md) using the same hardware. The CMSIS project remains unchanged for comparison.
+A nonblocking STM32F407 traffic light with a debounced pedestrian button and a white crossing indicator, implemented with STM32Cube HAL. This separate exercise reproduces the behavior of the [CMSIS traffic light](../../cmsis/breadboard_traffic_light/README.md) using the same hardware. The CMSIS project remains unchanged for comparison.
 
 CubeMX generates hardware initialization; the application state machine, elapsed-time checks, debounce, and pedestrian logic were written incrementally by the author with guided review. This is a learning demonstration, not a controller for real road traffic.
 
@@ -110,4 +110,4 @@ This comparison sits between the completed CMSIS traffic light and the next road
 
 HAL packages familiar register operations into reusable APIs. CubeMX makes pin and clock choices visible and generates their initialization, while the application still requires deliberate timing, state transitions, debounce, and request handling. Tracing the drivers connected the HAL GPIO calls and SysTick timebase to the register-level implementation.
 
-[Back to Embedded C Fundamentals](../README.md)
+[Back to Embedded C Fundamentals](../../README.md)

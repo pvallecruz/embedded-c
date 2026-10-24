@@ -118,4 +118,4 @@ This project connected external circuits with GPIO registers, enums, nonblocking
 
 Developed through hands-on coding, guided review, and testing on the breadboard.
 
-[Back to Embedded C Fundamentals](../README.md)
+[Back to Embedded C Fundamentals](../../README.md)

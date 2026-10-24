@@ -101,4 +101,4 @@ This project connected register-level peripheral setup with a complete user inte
 
 Developed incrementally through hands-on implementation and guided review. I wrote and tested the application, then incorporated review improvements to comments, validation, display scheduling, and error handling.
 
-[Back to Embedded C Fundamentals](../README.md)
+[Back to Embedded C Fundamentals](../../README.md)

@@ -2,7 +2,7 @@
 
 A button-and-LED reaction game built with register-level C on the STM32F407 Discovery board. Start a round, wait for the green LED, and press the USER button as quickly as possible. The game reports the reaction time and the fastest valid time so far through the SWV console.
 
-[Read the application code](Src/main.c) · [Back to Embedded C Fundamentals](../README.md)
+[Read the application code](Src/main.c) · [Back to Embedded C Fundamentals](../../README.md)
 
 ## How to play
 

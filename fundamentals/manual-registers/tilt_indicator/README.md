@@ -2,7 +2,7 @@
 
 A register-level C project that reads the onboard LIS3DSH accelerometer and uses two LEDs to indicate left or right tilt. Hysteresis keeps the indication stable near the switching threshold, while SPI timeouts let the application report a communication failure and stop processing measurements.
 
-[Read the application code](Src/main.c) · [Back to Embedded C Fundamentals](../README.md)
+[Read the application code](Src/main.c) · [Back to Embedded C Fundamentals](../../README.md)
 
 ## Behavior
 
