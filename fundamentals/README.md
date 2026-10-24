@@ -2,7 +2,7 @@
 
 Small, hands-on projects exploring how embedded software interacts with real hardware.
 
-This collection documents my progress with register-level C programming on the STM32F407 Discovery board. Each project grows through practical milestones: understand the hardware, implement a feature, test it on the board, and explain what I learned.
+This collection documents my progress with register-level C programming and HAL comparisons on the STM32F407 Discovery board. Each project grows through practical milestones: understand the hardware, implement a feature, test it on the board, and explain what I learned.
 
 ## Project index
 
@@ -14,6 +14,7 @@ This collection documents my progress with register-level C programming on the S
 | [ADC/PWM LED Dimmer](adc_pwm_dimmer/README.md) | CMSIS registers, ADC, PWM, I²C, and LCD feedback | Knob-controlled LED with percentage display tested on hardware; review refinements awaiting regression test |
 | [UART Command Console](uart_command_console/README.md) | USART2 interrupts, circular buffering, command parsing, and GPIO control | Four-LED commands and regression checks passed on hardware; overrun/queue-full recovery tested, framing/noise recovery simulated |
 | [Breadboard Traffic Light](breadboard_traffic_light/README.md) | External GPIO wiring, SysTick, state machines, debouncing, and elapsed-time checks | Traffic sequence and pedestrian indication tested on hardware; initial-red timer wrap verified |
+| [Breadboard Traffic Light — HAL Comparison](breadboard_traffic_light_hal/README.md) | CubeMX, HAL GPIO, HAL tick timing, state machines, and debouncing | Normal and pedestrian behavior manually tested; initial and requested red timing across wrap verified, with coverage limits documented |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
 
@@ -28,7 +29,7 @@ Each project README contains its hardware setup, implementation details, run ins
 - [ ] Retest the dimmer after review refinements
 - [x] Build and verify a UART console with interrupt-driven reception and validated LED commands
 - [x] Build a breadboard traffic light with external LEDs and a pedestrian button
-- [ ] Build a separate HAL traffic-light comparison using the same hardware and behavior
+- [x] Build a separate HAL traffic-light comparison using the same hardware and behavior
 - [ ] Add ADC timeout handling and organize reusable peripheral drivers
 
 ## Learning approach
