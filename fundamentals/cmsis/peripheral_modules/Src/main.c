@@ -18,17 +18,30 @@
 
 #include <stdint.h>
 #include "led.h"
+#include "button.h"
 #include "stm32f4xx.h"
 
+void SysTick_Handler(void);
+
+static volatile uint32_t system_ticks = 0U;
+
 int main(void) {
+	button_init();
 	led_init(7U);
-	led_init(8U);
-	led_on(7U);
-	led_on(8U);
-	led_init(10U);
-	led_on(10U);
-	led_off(10U);
-	led_toggle(10U);
-	/* Loop forever */
-	for (;;);
+
+	if (SysTick_Config(16000U) != 0U) {
+	    for (;;) {
+	    }
+	}
+
+	while(1) {
+		uint32_t now = system_ticks;
+		if (button_update(now) == 1U) {
+			led_toggle(7U);
+		}
+	}
+}
+
+void SysTick_Handler(void) {
+	system_ticks++;
 }
