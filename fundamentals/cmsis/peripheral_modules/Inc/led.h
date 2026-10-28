@@ -1,19 +1,19 @@
-/*
+/**
  * @file   led.h
  * @author Pedro Valle-Cruz
- * @brief  GPIOE LED initialization and control.
- * @note   Pass pin numbers (7, 8, 9, or 11), not bit masks.
- *         Call led_init(pin) before controlling that LED.
- *         Initialization leaves the LED off.
- *         Unsupported pins are ignored; functions return no value.
- *         Assumes exclusive control of the selected LED outputs.
+ * @brief  Initialize and control active-high LEDs on GPIOE.
+ * @note   Pass pin numbers 7, 8, 9, or 11, not bit masks.
+ *         Call led_init(pin) before using that LED; it starts off.
+ *         Unsupported pins are ignored, with no return value.
+ *         The caller must give this module exclusive control of its LED outputs.
  */
 
 #ifndef LED_H_
-
 #define LED_H_
+
 void led_init(unsigned int pin);
 void led_on(unsigned int pin);
 void led_off(unsigned int pin);
 void led_toggle(unsigned int pin);
+
 #endif /* LED_H_ */
