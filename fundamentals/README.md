@@ -27,7 +27,8 @@ Project names remain unchanged so existing build configurations and comparisons 
 | [UART Command Console](cmsis/uart_command_console/README.md) | USART2 interrupts, circular buffering, command parsing, and GPIO control | Four-LED commands and regression checks passed on hardware; overrun/queue-full recovery tested, framing/noise recovery simulated |
 | [Breadboard Traffic Light](cmsis/breadboard_traffic_light/README.md) | External GPIO wiring, SysTick, state machines, debouncing, and elapsed-time checks | Traffic sequence and pedestrian indication tested on hardware; initial-red timer wrap verified |
 | [Breadboard Traffic Light — HAL Comparison](hal/breadboard_traffic_light_hal/README.md) | CubeMX, HAL GPIO, HAL tick timing, state machines, and debouncing | Normal and pedestrian behavior manually tested; initial and requested red timing across wrap verified, with coverage limits documented |
-| [Reusable Peripheral Modules — CMSIS](cmsis/peripheral_modules/README.md) | Public interfaces, private state, validated GPIO control, and timebase-independent debounce | CMSIS LED/button milestone tested, including press debounce across wrap; HAL counterpart planned |
+| [Reusable Peripheral Modules — CMSIS](cmsis/peripheral_modules/README.md) | Public interfaces, private state, validated GPIO control, and timebase-independent debounce | CMSIS LED/button milestone tested, including press debounce across wrap; HAL counterpart also verified |
+| [Reusable Peripheral Modules — HAL](hal/peripheral_modules_hal/README.md) | HAL GPIO implementations behind matching interfaces and unchanged debounce logic | Independent LED control, invalid-pin rejection, button behavior, and press debounce across wrap verified |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
 
@@ -44,7 +45,7 @@ Each project README contains its hardware setup, implementation details, run ins
 - [x] Build a breadboard traffic light with external LEDs and a pedestrian button
 - [x] Build a separate HAL traffic-light comparison using the same hardware and behavior
 - [x] Build and verify CMSIS LED and debounced-button modules
-- [ ] Build a HAL counterpart with matching module interfaces and repeat verification
+- [x] Build a HAL counterpart with matching module interfaces and repeat verification
 - [ ] Add ADC timeout handling
 
 ## Learning approach

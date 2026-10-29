@@ -4,7 +4,7 @@
 
 A small STM32F407 project separating LED control and button debounce into `.c`/`.h` modules. The demonstration toggles the red LED once per accepted button press. Holding or releasing the button does not toggle it again.
 
-The CMSIS implementation and manual hardware checks are complete for the scope below. A separate HAL implementation with matching public interfaces is planned next; that comparison is not yet complete.
+The CMSIS implementation and manual hardware checks are complete for the scope below. The separate [HAL counterpart](../../hal/peripheral_modules_hal/README.md) now has matching public interfaces and verified hardware behavior; the comparison is complete within the documented scope.
 
 ## Hardware
 
@@ -109,6 +109,6 @@ The final comment/formatting cleanup preserved all executable tokens in the five
 
 This exercise separates an application's decisions from hardware access through public interfaces. It practices header guards, parameterized pin masks, validation before shifts, private helpers, persistent module state, and event-based debounce with an injected time value.
 
-The next exercise is a **separate HAL counterpart**: retain the public contracts, implement GPIO access with HAL, pass `HAL_GetTick()` into the debounce logic, and repeat the same tests. The broader roadmap continues afterward with the sensor data logger, fault recovery, parser tests, and integrated monitoring station.
+The completed [HAL counterpart](../../hal/peripheral_modules_hal/README.md) retains the public contracts, implements GPIO access with HAL, and passes `HAL_GetTick()` into the same debounce logic. Its README records the corresponding tests. The broader roadmap continues afterward with the sensor data logger, fault recovery, parser tests, and integrated monitoring station.
 
 [Back to CMSIS Projects](../README.md) · [Back to Embedded C Fundamentals](../../README.md)
