@@ -17,10 +17,14 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
 #include "stm32f4xx.h"
 
 static void adc_init(void);
 static uint16_t adc_read(void);
+static void usart2_init(void);
+static void usart2_write_char(char character);
+static void usart2_write_string(const char *text);
 
 volatile uint32_t adc_reading = 0U;
 volatile uint32_t system_ticks = 0U;
@@ -29,13 +33,19 @@ volatile uint32_t system_ticks = 0U;
 int main(void) {
 	SysTick_Config(16000U);
 	adc_init();
+	usart2_init();
 	uint32_t last_sample = system_ticks;
+	char line[32];
 
   for(;;) {
 	  uint32_t now = system_ticks;
 	  if((now - last_sample) >= 100U) {
-		  last_sample = now;
+	  	last_sample = now;
 		  adc_reading = adc_read();
+		  snprintf(line, sizeof(line), "%lu,%lu\r\n",
+		           (unsigned long)now,
+		           (unsigned long)adc_reading);
+		  usart2_write_string(line);
 	  }
   }
 }
@@ -68,4 +78,31 @@ static uint16_t adc_read(void) {
 
 void SysTick_Handler(void) {
 	system_ticks++;
+}
+
+static void usart2_init(void) {
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+	GPIOA->MODER &= ~(GPIO_MODER_MODER2);
+	GPIOA->MODER |= GPIO_MODER_MODER2_1;
+	GPIOA->AFR[0] &= ~GPIO_AFRL_AFSEL2;
+	GPIOA->AFR[0] |= (GPIO_AFRL_AFSEL2_0 |
+	                  GPIO_AFRL_AFSEL2_1 |
+	                  GPIO_AFRL_AFSEL2_2);
+	USART2->BRR = (8U << USART_BRR_DIV_Mantissa_Pos) | 11U;
+	USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE);
+}
+
+static void usart2_write_char(char character) {
+  while ((USART2->SR & USART_SR_TXE) == 0U) {
+
+  }
+  USART2->DR = character;
+}
+
+static void usart2_write_string(const char *text) {
+  while (*text != '\0') {
+    usart2_write_char(*text);
+    text++;
+  }
 }
