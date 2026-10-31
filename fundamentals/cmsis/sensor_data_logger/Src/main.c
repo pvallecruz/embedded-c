@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "stm32f4xx.h"
+#include "button.h"
+#include "led.h"
 
 static void adc_init(void);
 static uint16_t adc_read(void);
@@ -34,12 +36,23 @@ int main(void) {
 	SysTick_Config(16000U);
 	adc_init();
 	usart2_init();
+	button_init();
+	led_init(9U);
 	uint32_t last_sample = system_ticks;
+	uint8_t logging_enabled = 0U;
 	char line[32];
-
   for(;;) {
 	  uint32_t now = system_ticks;
-	  if((now - last_sample) >= 100U) {
+	  if(button_update(now)) {
+	  	logging_enabled = !(logging_enabled);
+	  	if(logging_enabled) {
+	  		led_on(9U);
+	  	  last_sample = now;
+	    } else {
+	  	  led_off(9U);
+	    }
+	  }
+	  if (logging_enabled && ((now - last_sample) >= 100U)) {
 	  	last_sample = now;
 		  adc_reading = adc_read();
 		  snprintf(line, sizeof(line), "%lu,%lu\r\n",
