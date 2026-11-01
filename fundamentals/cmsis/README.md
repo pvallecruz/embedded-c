@@ -10,4 +10,6 @@ All projects in this category run without an operating system.
 
 - [Reusable Peripheral Modules](peripheral_modules/README.md) — LED control and debounced button events; CMSIS milestone tested.
 
+- [Sensor Data Logger](sensor_data_logger/README.md) — button-controlled light sensing, UART output, and Python CSV capture; hardware and receiver framing verified.
+
 [Back to Embedded C Fundamentals](../README.md)

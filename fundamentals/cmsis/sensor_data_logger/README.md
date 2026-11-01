@@ -93,6 +93,8 @@ The first field is the firmware millisecond counter sampled before conversion, n
 Time (ms),ADC_Reading
 ```
 
+The receiver bounds each read to 64 bytes and retains partial records across timeouts until a newline arrives. On connection it discards through the first newline to establish a known boundary, deliberately losing one potentially complete sample. Records longer than 64 bytes are dropped; their remainder is discarded through the next newline before normal reception resumes. An unfinished record is not written on shutdown.
+
 It skips empty timeout reads, non-ASCII input, rows with other than two fields, failed integer conversions, timestamps outside 0–4294967295, and ADC values outside 0–4095. Accepted rows are written and flushed, and their values are printed. Flushing moves Python's buffered output to the operating system; it is not a guarantee against sudden power loss.
 
 For an Excel plot, use XY Scatter with straight lines: timestamps as X and ADC readings as Y, excluding the header. Keep captures separate. A line across a pause connects measurements on either side; it does not represent measurements taken during the pause. CSV preserves values, while an XLSX workbook preserves the chart.
@@ -115,15 +117,26 @@ I manually confirmed the following during October 30–November 1, 2026:
 | Existing CSV | Existing-file message without overwriting the capture |
 | Invalid output path | File/OS error message and return to prompt |
 
-These are manual functional checks, not instrumented timing/accuracy measurements. Debugger pauses affect execution timing. Light readings depend on illumination and component characteristics. Release was configured but not independently validated in this session. Invalid-row filters were inspected in source; malformed serial inputs were not systematically injected.
+These are manual functional checks, not instrumented timing/accuracy measurements. Debugger pauses affect execution timing. Light readings depend on illumination and component characteristics. Release was configured but not independently validated in this session. Receiver validation and framing were also exercised using simulated serial input, as detailed below; these checks do not simulate electrical UART faults.
+
+### Receiver framing verification and final review
+
+On November 1, 2026, the saved Python receiver passed five simulated serial-input scenarios: fragments separated by an empty timeout; oversized records with a later newline; oversized records ending in the current read; invalid ASCII/field counts/integers/ranges plus valid boundary values; and startup discard plus an unfinished record at shutdown. Tests compared the resulting CSV rows against expected values and checked clean resource closure. No real serial port was opened for these simulations.
+
+After those changes, I repeated normal capture on hardware and confirmed clean output. Final formatting and explanatory-comment cleanup preserved the C executable tokens and Python syntax tree. The reusable button and LED modules were left unchanged. The cleaned Debug firmware rebuilt and linked with no warnings or errors reported; Python parsed successfully and the Git whitespace check passed. The board was not reflashed after this comments/formatting-only cleanup, and Release was not rebuilt.
 
 ## Current limitations and follow-up
 
 - ADC and UART polling have no timeout. A peripheral fault can stall the main loop.
-- Serial reads use a one-second timeout without a persistent partial-line buffer. Interrupted or partial records are not robustly reassembled; validation alone does not prove a complete record was received.
-- A receiver started mid-stream can encounter an initial fragment. There are no sequence numbers, checksums, or acknowledgments to prove loss-free delivery.
+- Newline framing and range checks do not prove loss-free delivery or detect every corrupted numeric value. There are no sequence numbers, checksums, or acknowledgments. If firmware resets during a partial record, the receiver cannot reliably identify the new session from this protocol alone.
 - Serial/file errors stop the receiver; automatic reconnection is not implemented. Error handlers print a message but do not explicitly set a failure exit code.
 - The millisecond counter wraps after approximately 49.7 days and restarts on reset. Firmware elapsed-time comparisons use unsigned subtraction; CSV timestamps are not unwrapped by Python.
 - The receiver has no live graph, calibration, or LCD support yet.
 
 Keep generated Debug/Release outputs and local environments out of commits. Include capture data only when intentionally selecting an example for documentation. No code changes are required to switch from the tested potentiometer input to the described photoresistor divider.
+
+## Completed scope
+
+The light-sensor logger milestone is complete: button-controlled 100 ms sampling, LED state feedback, timestamped UART transmission, validated CSV capture, and documented hardware/error-path checks. Future timeout recovery, live visualization, LCD output, and calibration are separate extensions.
+
+[CMSIS project index](../README.md) · [Fundamentals index](../../README.md)
