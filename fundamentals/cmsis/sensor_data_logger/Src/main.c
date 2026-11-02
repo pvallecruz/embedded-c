@@ -22,14 +22,18 @@
 #include "button.h"
 #include "led.h"
 
+#define ADC_TIMEOUT_MS 5U
+
 static void adc_init(void);
-static uint16_t adc_read(void);
+static int adc_read(uint16_t *result);
 static void usart2_init(void);
 static void usart2_write_char(char character);
 static void usart2_write_string(const char *text);
+static void adc_recover(void);
 
 /* Retain the latest result for debugger inspection, including while paused. */
 volatile uint32_t adc_reading = 0U;
+volatile uint32_t adc_timeout_count = 0U;
 /* Written by SysTick; read by the polling loop and ADC startup wait. */
 volatile uint32_t system_ticks = 0U;
 
@@ -60,13 +64,21 @@ int main(void) {
 
     /* Unsigned elapsed time tolerates tick wrap; no catch-up burst after delays. */
     if (logging_enabled && ((now - last_sample) >= 100U)) {
-      last_sample = now;
-      adc_reading = adc_read();
-      /* Snapshot time precedes conversion; send raw ADC counts, not lux. */
-      snprintf(line, sizeof(line), "%lu,%lu\r\n",
-               (unsigned long)now,
-               (unsigned long)adc_reading);
-      usart2_write_string(line);
+      uint16_t sample;
+    	last_sample = now;
+    	if (adc_read(&sample)) {
+    		adc_reading = sample;
+				/* Snapshot time precedes conversion; send raw ADC counts, not lux. */
+				snprintf(line, sizeof(line), "%lu,%lu\r\n",
+								 (unsigned long)now,
+								 (unsigned long)adc_reading);
+				usart2_write_string(line);
+    	} else {
+        adc_timeout_count++;
+        logging_enabled = 0U;
+        led_off(9U);
+        adc_recover();
+    	}
     }
   }
 }
@@ -96,12 +108,17 @@ static void adc_init(void) {
 }
 
 /* Blocking conversion; a hardware fault currently has no timeout recovery. */
-static uint16_t adc_read(void) {
-  ADC1->CR2 |= (ADC_CR2_SWSTART);
+static int adc_read(uint16_t *result) {
+  uint32_t started_at = system_ticks;
+	ADC1->CR2 |= (ADC_CR2_SWSTART);
   while ((ADC1->SR & ADC_SR_EOC) == 0U) {
+  	if ((uint32_t)(system_ticks - started_at) >= ADC_TIMEOUT_MS) {
+  		return 0;
+  	}
   }
   /* Reading DR retrieves the result and clears EOC. */
-  return ADC1->DR;
+  *result = (uint16_t)ADC1->DR;
+  return 1;
 }
 
 /* Keep the interrupt short; application work remains in the main loop. */
@@ -136,4 +153,10 @@ static void usart2_write_string(const char *text) {
     usart2_write_char(*text);
     text++;
   }
+}
+
+static void adc_recover(void) {
+	RCC->APB2RSTR |= RCC_APB2RSTR_ADCRST;
+	RCC->APB2RSTR &= ~(RCC_APB2RSTR_ADCRST);
+	adc_init();
 }
