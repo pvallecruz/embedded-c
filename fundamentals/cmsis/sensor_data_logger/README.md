@@ -13,6 +13,7 @@ Built incrementally with guided review; the author wrote the application code an
 - Holding the button does not repeatedly toggle logging. The reused button module requires 20 ms of stable input and does not count a button held at initialization as a new press.
 - While enabled, sampling becomes due every 100 ms. Starting logging resets the scheduling timestamp, so the first sample is due 100 ms later.
 - SysTick continues while paused. Resumed output therefore contains a timestamp gap.
+- A conversion timeout increments `adc_timeout_count`, turns the LED off, pauses logging, and resets/reinitializes the ADC block. No measurement is transmitted for the failed conversion. The next button press requests a new attempt.
 - ADC readings are raw 12-bit values, 0–4095, not calibrated lux measurements.
 
 ## Wiring
@@ -54,7 +55,7 @@ Clock assumptions were checked in the debugger: HSI enabled/ready, RCC CFGR zero
 
 ADC1 uses PA1 in analog mode with no pulls, 12-bit resolution, one regular conversion of channel 1, 480-cycle sampling, right alignment, and software triggering. After enabling ADC1, initialization waits for two SysTick increments. This is a blocking startup wait; ordinary sampling is scheduled using unsigned elapsed-time subtraction.
 
-USART2 uses PA2 AF7 and a BRR value of 139 for nominal 115200 baud at 16 MHz, with reset-default 8N1 and 16× oversampling. Transmission and ADC completion polling are blocking; the interval between samples is not a blocking delay.
+USART2 uses PA2 AF7 and a BRR value of 139 for nominal 115200 baud at 16 MHz, with reset-default 8N1 and 16× oversampling. Transmission and ADC completion polling are blocking; the interval between samples is not a blocking delay. ADC completion polling is now bounded by five elapsed SysTick ticks, provided interrupts keep running. UART polling remains unbounded.
 
 ## Run the Python receiver
 
@@ -125,9 +126,24 @@ On November 1, 2026, the saved Python receiver passed five simulated serial-inpu
 
 After those changes, I repeated normal capture on hardware and confirmed clean output. Final formatting and explanatory-comment cleanup preserved the C executable tokens and Python syntax tree. The reusable button and LED modules were left unchanged. The cleaned Debug firmware rebuilt and linked with no warnings or errors reported; Python parsed successfully and the Git whitespace check passed. The board was not reflashed after this comments/formatting-only cleanup, and Release was not rebuilt.
 
+### ADC timeout and recovery milestone
+
+On November 1, 2026, I verified normal readings after changing `adc_read()` to return an integer status and write the measurement through a `uint16_t *` only on success. Failure leaves the supplied output unchanged. The main loop transmits only successful measurements and retains the previous `adc_reading` for debugger inspection.
+
+The timeout starts before SWSTART and returns failure after at least five elapsed tick counts while EOC remains clear. This is a millisecond-counter threshold, not an instrumented guarantee of exactly 5 ms; tick phase and interrupt latency affect wall-clock timing. The timeout and ADC startup wait both depend on working SysTick interrupts.
+
+On failure, the caller increments `adc_timeout_count`, pauses logging, turns off PE9, pulses `RCC_APB2RSTR_ADCRST`, and calls `adc_init()`. This reset affects the shared ADC block, including ADC2 and ADC3; this application uses only ADC1. Reinitialization is a recovery attempt, not proof the underlying fault is gone. A persistent fault will time out again on the next requested sample.
+
+Manual fault tests confirmed:
+
+- **Forced non-completion:** break at SWSTART, execute that statement, disable ADC1 by setting CR2 to zero, clear SR, then resume. The counter increased once, logging and the LED stopped, and the previous reading remained. After ADC recovery, a button press restored readings without a board restart.
+- **Tick wraparound:** repeat with both `system_ticks` and the local `started_at` set to `0xFFFFFFFD`. At the timeout return, unsigned elapsed subtraction reached the five-tick threshold across zero. Pausing and button-driven recovery again behaved as expected.
+
+Breakpoints must allow execution to resume so SysTick advances. Restart normally after debugger-injected clock values. These tests cover controlled ADC non-completion and wrap arithmetic, not all possible clock, bus, or electrical faults. They do not establish precise analog timing.
+
 ## Current limitations and follow-up
 
-- ADC and UART polling have no timeout. A peripheral fault can stall the main loop.
+- UART polling still has no timeout and can stall the main loop. ADC polling has a timeout, but it and recovery startup still depend on SysTick; stopped interrupts or a processor/bus fault are outside this recovery mechanism.
 - Newline framing and range checks do not prove loss-free delivery or detect every corrupted numeric value. There are no sequence numbers, checksums, or acknowledgments. If firmware resets during a partial record, the receiver cannot reliably identify the new session from this protocol alone.
 - Serial/file errors stop the receiver; automatic reconnection is not implemented. Error handlers print a message but do not explicitly set a failure exit code.
 - The millisecond counter wraps after approximately 49.7 days and restarts on reset. Firmware elapsed-time comparisons use unsigned subtraction; CSV timestamps are not unwrapped by Python.
@@ -137,6 +153,6 @@ Keep generated Debug/Release outputs and local environments out of commits. Incl
 
 ## Completed scope
 
-The light-sensor logger milestone is complete: button-controlled 100 ms sampling, LED state feedback, timestamped UART transmission, validated CSV capture, and documented hardware/error-path checks. Future timeout recovery, live visualization, LCD output, and calibration are separate extensions.
+The light-sensor logger milestone is complete: button-controlled 100 ms sampling, LED state feedback, timestamped UART transmission, validated CSV capture, and documented hardware/error-path checks. The ADC timeout/recovery extension is also hardware-tested, including tick wraparound. UART timeout handling, live visualization, LCD output, and calibration remain separate extensions.
 
 [CMSIS project index](../README.md) · [Fundamentals index](../../README.md)

@@ -33,6 +33,7 @@ static void adc_recover(void);
 
 /* Retain the latest result for debugger inspection, including while paused. */
 volatile uint32_t adc_reading = 0U;
+/* Debugger-visible count of failed conversions, retained across ADC resets. */
 volatile uint32_t adc_timeout_count = 0U;
 /* Written by SysTick; read by the polling loop and ADC startup wait. */
 volatile uint32_t system_ticks = 0U;
@@ -65,20 +66,21 @@ int main(void) {
     /* Unsigned elapsed time tolerates tick wrap; no catch-up burst after delays. */
     if (logging_enabled && ((now - last_sample) >= 100U)) {
       uint16_t sample;
-    	last_sample = now;
-    	if (adc_read(&sample)) {
-    		adc_reading = sample;
+      last_sample = now;
+      if (adc_read(&sample)) {
+        adc_reading = sample;
 				/* Snapshot time precedes conversion; send raw ADC counts, not lux. */
-				snprintf(line, sizeof(line), "%lu,%lu\r\n",
-								 (unsigned long)now,
-								 (unsigned long)adc_reading);
-				usart2_write_string(line);
-    	} else {
+        snprintf(line, sizeof(line), "%lu,%lu\r\n",
+            (unsigned long)now,
+            (unsigned long)adc_reading);
+        usart2_write_string(line);
+      } else {
+        /* Do not transmit stale data or retry automatically after a failure. */
         adc_timeout_count++;
         logging_enabled = 0U;
         led_off(9U);
         adc_recover();
-    	}
+      }
     }
   }
 }
@@ -107,14 +109,16 @@ static void adc_init(void) {
   }
 }
 
-/* Blocking conversion; a hardware fault currently has no timeout recovery. */
+/* Return 1 and write through a valid result pointer only on success.
+ * Return 0 without changing *result after five elapsed ticks without EOC.
+ * SysTick interrupts must remain active; the caller owns ADC recovery. */
 static int adc_read(uint16_t *result) {
   uint32_t started_at = system_ticks;
-	ADC1->CR2 |= (ADC_CR2_SWSTART);
+  ADC1->CR2 |= (ADC_CR2_SWSTART);
   while ((ADC1->SR & ADC_SR_EOC) == 0U) {
-  	if ((uint32_t)(system_ticks - started_at) >= ADC_TIMEOUT_MS) {
-  		return 0;
-  	}
+    if ((uint32_t)(system_ticks - started_at) >= ADC_TIMEOUT_MS) {
+      return 0;
+    }
   }
   /* Reading DR retrieves the result and clears EOC. */
   *result = (uint16_t)ADC1->DR;
@@ -155,8 +159,10 @@ static void usart2_write_string(const char *text) {
   }
 }
 
+/* ADCRST resets the shared ADC block, including ADC2/3. Only ADC1 is used here.
+ * Reinitialize and wait for startup, leaving logging paused for a button retry. */
 static void adc_recover(void) {
-	RCC->APB2RSTR |= RCC_APB2RSTR_ADCRST;
-	RCC->APB2RSTR &= ~(RCC_APB2RSTR_ADCRST);
-	adc_init();
+  RCC->APB2RSTR |= RCC_APB2RSTR_ADCRST;
+  RCC->APB2RSTR &= ~(RCC_APB2RSTR_ADCRST);
+  adc_init();
 }
