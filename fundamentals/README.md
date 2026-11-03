@@ -30,7 +30,7 @@ Project names remain unchanged so existing build configurations and comparisons 
 | [Reusable Peripheral Modules — CMSIS](cmsis/peripheral_modules/README.md) | Public interfaces, private state, validated GPIO control, and timebase-independent debounce | CMSIS LED/button milestone tested, including press debounce across wrap; HAL counterpart also verified |
 | [Reusable Peripheral Modules — HAL](hal/peripheral_modules_hal/README.md) | HAL GPIO implementations behind matching interfaces and unchanged debounce logic | Independent LED control, invalid-pin rejection, button behavior, and press debounce across wrap verified |
 
-| [Sensor Data Logger — CMSIS](cmsis/sensor_data_logger/README.md) | ADC, timed sampling, reusable button/LED modules, UART, and Python CSV capture | Hardware sampling/control and host error paths verified; partial/oversized receiver records tested with simulated input |
+| [Sensor Data Logger — CMSIS](cmsis/sensor_data_logger/README.md) | ADC, timed sampling, reusable button/LED modules, UART, and Python CSV capture | Light logging and host error paths verified; ADC timeout/recovery and wrap tested; UART completion timeout, partial-line recovery, and failed-marker retry tested |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
 
@@ -49,7 +49,8 @@ Each project README contains its hardware setup, implementation details, run ins
 - [x] Build and verify CMSIS LED and debounced-button modules
 - [x] Build a HAL counterpart with matching module interfaces and repeat verification
 - [x] Build and verify a button-controlled light-sensor logger with Python CSV capture
-- [ ] Add ADC timeout handling
+- [x] Add and verify ADC timeout/recovery in the sensor data logger, including tick wraparound
+- [x] Add and verify UART timeout/recovery and partial-line resynchronization in the sensor data logger
 
 ## Learning approach
 

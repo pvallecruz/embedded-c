@@ -55,7 +55,7 @@ Clock assumptions were checked in the debugger: HSI enabled/ready, RCC CFGR zero
 
 ADC1 uses PA1 in analog mode with no pulls, 12-bit resolution, one regular conversion of channel 1, 480-cycle sampling, right alignment, and software triggering. After enabling ADC1, initialization waits for two SysTick increments. This is a blocking startup wait; ordinary sampling is scheduled using unsigned elapsed-time subtraction.
 
-USART2 uses PA2 AF7 and a BRR value of 139 for nominal 115200 baud at 16 MHz, with reset-default 8N1 and 16× oversampling. Transmission and ADC completion polling are blocking; the interval between samples is not a blocking delay. ADC completion polling is now bounded by five elapsed SysTick ticks, provided interrupts keep running. UART polling remains unbounded.
+USART2 uses PA2 AF7 and a BRR value of 139 for nominal 115200 baud at 16 MHz, with reset-default 8N1 and 16× oversampling. Transmission and ADC completion polling are blocking; the interval between samples is not a blocking delay. ADC completion polling is now bounded by five elapsed SysTick ticks, provided interrupts keep running. UART TXE polling and the final TC wait are each bounded by five elapsed ticks, with failures propagated to the main loop.
 
 ## Run the Python receiver
 
@@ -141,9 +141,23 @@ Manual fault tests confirmed:
 
 Breakpoints must allow execution to resume so SysTick advances. Restart normally after debugger-injected clock values. These tests cover controlled ADC non-completion and wrap arithmetic, not all possible clock, bus, or electrical faults. They do not establish precise analog timing.
 
+### UART timeout and partial-line recovery milestone
+
+On November 2, 2026, normal UART capture and button start/pause/resume were confirmed with `uart_timeout_count` remaining zero. Each character waits for TXE with a five-tick timeout; the string function stops at the first failure and separately waits for TC with the same timeout. This is a per-wait bound, not a single five-tick budget for the entire string. Both depend on SysTick interrupts. Success means local transmission completed, not that Python received the bytes.
+
+A failed data line increments `uart_timeout_count`, pauses logging, turns the LED off, sets `uart_resync_needed`, and resets/reinitializes USART2. Before a later button-driven restart can send data, it must successfully transmit `!\r\n`. The exclamation mark makes any buffered numeric prefix invalid, and the newline establishes a fresh boundary. Python rejects it through its existing field/integer validation. A failed marker increments the counter again, resets USART2, and leaves the flag set and logging paused for another button retry.
+
+Manually confirmed checks:
+
+- **TC timeout:** break after the character loop and before capturing the TC wait start time; disable USART2 with CR1 = 0 and clear SR, then resume. One timeout was counted, output paused, the LED turned off, and a button-driven marker/restart restored readings. The final data line may already have reached the host before the injected fault.
+- **Partial line:** a temporary `uart_test_stall` flag was added to the TXE wait condition. After several good records, a breakpoint conditioned on `character == 13` injected the stall before the carriage return. Python retained the numeric prefix across timeouts without writing it. Clearing the stall and restarting by button sent the marker, discarded that prefix, and restored clean capture in the same Python session.
+- **Failed marker:** leaving the test flag set during the next button press caused another timeout. Logging remained paused, the LED stayed off, and `uart_resync_needed` remained set. Clearing the flag allowed a later press to recover normally.
+
+The temporary flag and modified wait condition were removed after testing. The character-stall test exercises the software timeout path, not a measured physical TXE hardware failure. UART timeout wraparound was not separately injected; only the ADC wraparound test above was performed. Disconnecting the adapter does not establish a firmware UART stall because the transmitter does not require a receiver acknowledgment.
+
 ## Current limitations and follow-up
 
-- UART polling still has no timeout and can stall the main loop. ADC polling has a timeout, but it and recovery startup still depend on SysTick; stopped interrupts or a processor/bus fault are outside this recovery mechanism.
+- ADC and UART waits have timeouts, but those timeouts and ADC recovery startup depend on SysTick. Stopped interrupts or a processor/bus fault are outside this recovery mechanism. Polling is still blocking during each bounded wait.
 - Newline framing and range checks do not prove loss-free delivery or detect every corrupted numeric value. There are no sequence numbers, checksums, or acknowledgments. If firmware resets during a partial record, the receiver cannot reliably identify the new session from this protocol alone.
 - Serial/file errors stop the receiver; automatic reconnection is not implemented. Error handlers print a message but do not explicitly set a failure exit code.
 - The millisecond counter wraps after approximately 49.7 days and restarts on reset. Firmware elapsed-time comparisons use unsigned subtraction; CSV timestamps are not unwrapped by Python.
@@ -153,6 +167,6 @@ Keep generated Debug/Release outputs and local environments out of commits. Incl
 
 ## Completed scope
 
-The light-sensor logger milestone is complete: button-controlled 100 ms sampling, LED state feedback, timestamped UART transmission, validated CSV capture, and documented hardware/error-path checks. The ADC timeout/recovery extension is also hardware-tested, including tick wraparound. UART timeout handling, live visualization, LCD output, and calibration remain separate extensions.
+The light-sensor logger milestone is complete: button-controlled 100 ms sampling, LED state feedback, timestamped UART transmission, validated CSV capture, and documented hardware/error-path checks. The ADC timeout/recovery extension is also hardware-tested, including tick wraparound. UART timeout, partial-line resynchronization, and failed-marker retry behavior are also tested within the coverage limits above. Live visualization, LCD output, and calibration remain separate extensions.
 
 [CMSIS project index](../README.md) · [Fundamentals index](../../README.md)

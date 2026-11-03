@@ -23,18 +23,22 @@
 #include "led.h"
 
 #define ADC_TIMEOUT_MS 5U
+#define UART_TIMEOUT_MS 5U
 
 static void adc_init(void);
 static int adc_read(uint16_t *result);
 static void usart2_init(void);
-static void usart2_write_char(char character);
-static void usart2_write_string(const char *text);
+static int usart2_write_char(char character);
+static int usart2_write_string(const char *text);
 static void adc_recover(void);
+static void usart2_recover(void);
 
 /* Retain the latest result for debugger inspection, including while paused. */
 volatile uint32_t adc_reading = 0U;
 /* Debugger-visible count of failed conversions, retained across ADC resets. */
 volatile uint32_t adc_timeout_count = 0U;
+/* Counts failed data-line or resynchronization-marker transmission attempts. */
+volatile uint32_t uart_timeout_count = 0U;
 /* Written by SysTick; read by the polling loop and ADC startup wait. */
 volatile uint32_t system_ticks = 0U;
 
@@ -47,6 +51,8 @@ int main(void) {
   led_init(9U);
   uint32_t last_sample = system_ticks;
   uint8_t logging_enabled = 0U;
+  /* A reset cannot erase a partial line already buffered by the host. */
+  uint8_t uart_resync_needed = 0U;
   char line[32];
 
   for (;;) {
@@ -55,6 +61,18 @@ int main(void) {
     if (button_update(now)) {
       logging_enabled = !(logging_enabled);
       if (logging_enabled) {
+        /* Invalidate any old numeric prefix and finish its line before new data. */
+        if (uart_resync_needed) {
+          if (!usart2_write_string("!\r\n")) {
+            uart_timeout_count++;
+            logging_enabled = 0U;
+            led_off(9U);
+            usart2_recover();
+            /* Keep the resync flag set; require another button press to retry. */
+            continue;
+          }
+          uart_resync_needed = 0U;
+        }
         led_on(9U);
         /* Start a fresh interval rather than immediately sampling after a pause. */
         last_sample = now;
@@ -69,11 +87,17 @@ int main(void) {
       last_sample = now;
       if (adc_read(&sample)) {
         adc_reading = sample;
-				/* Snapshot time precedes conversion; send raw ADC counts, not lux. */
+        /* Snapshot time precedes conversion; send raw ADC counts, not lux. */
         snprintf(line, sizeof(line), "%lu,%lu\r\n",
             (unsigned long)now,
             (unsigned long)adc_reading);
-        usart2_write_string(line);
+        if (!usart2_write_string(line)) {
+          uart_timeout_count++;
+          logging_enabled = 0U;
+          led_off(9U);
+          uart_resync_needed = 1U;
+          usart2_recover();
+        }
       } else {
         /* Do not transmit stale data or retry automatically after a failure. */
         adc_timeout_count++;
@@ -145,18 +169,36 @@ static void usart2_init(void) {
   USART2->CR1 |= (USART_CR1_UE | USART_CR1_TE);
 }
 
-/* TXE means DR can accept a byte, not that the last stop bit has left PA2. */
-static void usart2_write_char(char character) {
+/* Return 1 when DR accepts the byte, or 0 after five elapsed ticks waiting.
+ * TXE does not mean the byte has finished transmitting. SysTick must run. */
+static int usart2_write_char(char character) {
+  uint32_t started_at = system_ticks;
   while ((USART2->SR & USART_SR_TXE) == 0U) {
+    if ((uint32_t)(system_ticks - started_at) >= UART_TIMEOUT_MS) {
+      return 0;
+    }
   }
   USART2->DR = character;
+  return 1;
 }
 
-static void usart2_write_string(const char *text) {
+/* Stop on the first failed byte, then bound the final TC wait separately.
+ * Success means local transmission completed, not that the host received it. */
+static int usart2_write_string(const char *text) {
   while (*text != '\0') {
-    usart2_write_char(*text);
+    if (!usart2_write_char(*text)) {
+      return 0;
+    }
     text++;
   }
+  /* Give the last byte time to leave the shift register before reporting success. */
+  uint32_t started_at = system_ticks;
+  while ((USART2->SR & USART_SR_TC) == 0U) {
+    if ((uint32_t)(system_ticks - started_at) >= UART_TIMEOUT_MS) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 /* ADCRST resets the shared ADC block, including ADC2/3. Only ADC1 is used here.
@@ -165,4 +207,11 @@ static void adc_recover(void) {
   RCC->APB2RSTR |= RCC_APB2RSTR_ADCRST;
   RCC->APB2RSTR &= ~(RCC_APB2RSTR_ADCRST);
   adc_init();
+}
+
+/* Reset only USART2; the caller keeps logging paused and owns resynchronization. */
+static void usart2_recover(void) {
+  RCC->APB1RSTR |= RCC_APB1RSTR_USART2RST;
+  RCC->APB1RSTR &= ~(RCC_APB1RSTR_USART2RST);
+  usart2_init();
 }
