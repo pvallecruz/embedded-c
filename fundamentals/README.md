@@ -29,7 +29,6 @@ Project names remain unchanged so existing build configurations and comparisons 
 | [Breadboard Traffic Light — HAL Comparison](hal/breadboard_traffic_light_hal/README.md) | CubeMX, HAL GPIO, HAL tick timing, state machines, and debouncing | Normal and pedestrian behavior manually tested; initial and requested red timing across wrap verified, with coverage limits documented |
 | [Reusable Peripheral Modules — CMSIS](cmsis/peripheral_modules/README.md) | Public interfaces, private state, validated GPIO control, and timebase-independent debounce | CMSIS LED/button milestone tested, including press debounce across wrap; HAL counterpart also verified |
 | [Reusable Peripheral Modules — HAL](hal/peripheral_modules_hal/README.md) | HAL GPIO implementations behind matching interfaces and unchanged debounce logic | Independent LED control, invalid-pin rejection, button behavior, and press debounce across wrap verified |
-
 | [Sensor Data Logger — CMSIS](cmsis/sensor_data_logger/README.md) | ADC, timed sampling, reusable button/LED modules, UART, and Python CSV capture | Light logging and host error paths verified; ADC timeout/recovery and wrap tested; UART completion timeout, partial-line recovery, and failed-marker retry tested |
 
 Each project README contains its hardware setup, implementation details, run instructions, learning notes, and verification results. New projects will be added here as the collection grows.
