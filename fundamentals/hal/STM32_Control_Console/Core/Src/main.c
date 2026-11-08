@@ -23,8 +23,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "lcd.h"
-#include "keypad.h"
 #include "console.h"
 #include "led.h"
 /* USER CODE END Includes */
@@ -47,9 +45,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint8_t lcd_address = 0;
-volatile HAL_StatusTypeDef lcd_status;
+
 volatile HAL_StatusTypeDef console_status;
+static uint32_t console_retry_time = 0U;
 
 /* USER CODE END PV */
 
@@ -68,7 +66,8 @@ void SystemClock_Config(void);
   * @brief  The application entry point.
   * @retval int
   */
-int main(void) {
+int main(void)
+{
 
   /* USER CODE BEGIN 1 */
 
@@ -95,9 +94,9 @@ int main(void) {
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	lcd_status = LcdInit();
-	LedInit();
-	console_status = ConsoleInit();
+  LedInit();
+  console_status = ConsoleInit();
+  console_retry_time = HAL_GetTick();
 
   /* USER CODE END 2 */
 
@@ -110,12 +109,19 @@ int main(void) {
 
 		if (console_status == HAL_OK) {
 		  console_status = ConsoleUpdate();
+
+		  if (console_status != HAL_OK) {
+		    console_retry_time = HAL_GetTick();
+		  }
+		} else if ((uint32_t)(HAL_GetTick() - console_retry_time) >= 1000U) {
+		  console_status = ConsoleInit();
+		  console_retry_time = HAL_GetTick();
 		}
 
 		HAL_Delay(5);
+	}
 
   /* USER CODE END 3 */
-  }
 }
 
 /**

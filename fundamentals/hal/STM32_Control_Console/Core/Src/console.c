@@ -243,12 +243,15 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
               if (status != HAL_OK) {
                 return status;
               }
+            }
 
+            for (LedId led = LED_GREEN; led < LED_COUNT; led++) {
               status = ConsoleUpdateLedState(led);
               if (status != HAL_OK) {
                 return status;
               }
             }
+
             return HAL_OK;
 
           case '*':
