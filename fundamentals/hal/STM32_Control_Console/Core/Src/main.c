@@ -25,6 +25,8 @@
 /* USER CODE BEGIN Includes */
 #include "lcd.h"
 #include "keypad.h"
+#include "console.h"
+#include "led.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,7 +49,7 @@
 /* USER CODE BEGIN PV */
 volatile uint8_t lcd_address = 0;
 volatile HAL_StatusTypeDef lcd_status;
-volatile char pressed_key = '\0';
+volatile HAL_StatusTypeDef console_status;
 
 /* USER CODE END PV */
 
@@ -94,22 +96,8 @@ int main(void) {
   /* USER CODE BEGIN 2 */
 
 	lcd_status = LcdInit();
-
-	if (lcd_status == HAL_OK) {
-	  lcd_status = LcdClear();
-	}
-
-	if (lcd_status == HAL_OK) {
-	  lcd_status = LcdPrint("KEYPAD TEST");
-	}
-
-	if (lcd_status == HAL_OK) {
-	  lcd_status = LcdSetCursor(1, 0);
-	  if (lcd_status == HAL_OK) {
-	    lcd_status = LcdPrint("Pressed key:");
-	  }
-	}
-
+	LedInit();
+	console_status = ConsoleInit();
 
   /* USER CODE END 2 */
 
@@ -119,16 +107,13 @@ int main(void) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		char key = KeypadScan();
 
-		if (key != '\0') {
-		  if (LcdSetCursor(2, 0) == HAL_OK) {
-		    LcdPrint("Key: ");
-		    LcdPrint((char[]){key, '\0'});
-		  }
+		if (console_status == HAL_OK) {
+		  console_status = ConsoleUpdate();
 		}
 
 		HAL_Delay(5);
+
   /* USER CODE END 3 */
   }
 }
