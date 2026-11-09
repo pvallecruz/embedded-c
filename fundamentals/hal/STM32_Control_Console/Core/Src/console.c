@@ -5,14 +5,20 @@
  *      Author: pedrol.valle-cruz
  */
 
-
 #include "console.h"
-#include "lcd.h"
+
+#include <stdio.h>
+
 #include "keypad.h"
+#include "lcd.h"
 #include "led.h"
+#include "temperature.h"
+
+static HAL_StatusTypeDef ConsoleUpdateLedState(LedId led);
+static HAL_StatusTypeDef ConsoleUpdateTemperature(void);
 
 static ConsoleState current_state = CONSOLE_MAIN_MENU;
-static HAL_StatusTypeDef ConsoleUpdateLedState(LedId led);
+static uint32_t status_displayed_second = 0U;
 
 static HAL_StatusTypeDef ConsoleShowMainMenu(void) {
   HAL_StatusTypeDef status = LcdClear();
@@ -62,8 +68,7 @@ static HAL_StatusTypeDef ConsoleShowMainMenu(void) {
   return LcdPrint("3. Timer Settings");
 }
 
-
-static HAL_StatusTypeDef ConsoleShowSubmenu(const char *title) {
+static HAL_StatusTypeDef ConsoleShowSubmenu(const char* title) {
   HAL_StatusTypeDef status = LcdClear();
 
   if (status != HAL_OK) {
@@ -103,15 +108,8 @@ static HAL_StatusTypeDef ConsoleShowSubmenu(const char *title) {
   return LcdPrint("* = Back");
 }
 
-
 static HAL_StatusTypeDef ConsoleShowLedControl(void) {
-  const LedId leds[5] = {
-    LED_GREEN,
-    LED_YELLOW,
-    LED_RED,
-    LED_WHITE,
-    LED_BLUE
-  };
+  const LedId leds[5] = {LED_GREEN, LED_YELLOW, LED_RED, LED_WHITE, LED_BLUE};
 
   char states[] = "G:0 Y:0 R:0 W:0 B:0";
   const uint8_t positions[5] = {2U, 6U, 10U, 14U, 18U};
@@ -169,7 +167,60 @@ static HAL_StatusTypeDef ConsoleShowLedControl(void) {
   return LcdPrint("* Back   # All OFF");
 }
 
+static HAL_StatusTypeDef ConsoleUpdateSystemStatus(void) {
+  char text[21];
+  uint32_t seconds = HAL_GetTick() / 1000U;
+  uint32_t clock_mhz = HAL_RCC_GetHCLKFreq() / 1000000U;
 
+  snprintf(text, sizeof(text), "Up:%7lus %3luMHz ", (unsigned long)seconds,
+           (unsigned long)clock_mhz);
+
+  HAL_StatusTypeDef status = LcdSetCursor(1, 0);
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = LcdPrint(text);
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = ConsoleUpdateTemperature();
+  if (status == HAL_OK) {
+    status_displayed_second = seconds;
+  }
+
+  return status;
+}
+
+static HAL_StatusTypeDef ConsoleShowSystemStatus(void) {
+  HAL_StatusTypeDef status = LcdClear();
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = LcdSetCursor(0, 0);
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = LcdPrint("SYSTEM STATUS");
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = ConsoleUpdateSystemStatus();
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  status = LcdSetCursor(3, 0);
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  return LcdPrint("* = Back");
+}
 
 HAL_StatusTypeDef ConsoleInit(void) {
   HAL_StatusTypeDef status = LcdInit();
@@ -187,6 +238,11 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
   char key = KeypadGetKey();
 
   if (key == '\0') {
+    if (current_state == CONSOLE_SYSTEM_STATUS &&
+        (HAL_GetTick() / 1000U) != status_displayed_second) {
+      return ConsoleUpdateSystemStatus();
+    }
+
     return HAL_OK;
   }
 
@@ -199,7 +255,7 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
 
         case '2':
           current_state = CONSOLE_SYSTEM_STATUS;
-          return ConsoleShowSubmenu("SYSTEM STATUS");
+          return ConsoleShowSystemStatus();
 
         case '3':
           current_state = CONSOLE_TIMER_SETTINGS;
@@ -210,74 +266,71 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
       }
       break;
 
+    case CONSOLE_LED_CONTROL: {
+      HAL_StatusTypeDef status = HAL_OK;
+      LedId selected_led;
 
+      switch (key) {
+        case '1':
+          selected_led = LED_GREEN;
+          break;
 
-      case CONSOLE_LED_CONTROL: {
-        HAL_StatusTypeDef status = HAL_OK;
-        LedId selected_led;
+        case '2':
+          selected_led = LED_YELLOW;
+          break;
 
-        switch (key) {
-          case '1':
-            selected_led = LED_GREEN;
-            break;
+        case '3':
+          selected_led = LED_RED;
+          break;
 
-          case '2':
-            selected_led = LED_YELLOW;
-            break;
+        case '4':
+          selected_led = LED_WHITE;
+          break;
 
-          case '3':
-            selected_led = LED_RED;
-            break;
+        case '5':
+          selected_led = LED_BLUE;
+          break;
 
-          case '4':
-            selected_led = LED_WHITE;
-            break;
-
-          case '5':
-            selected_led = LED_BLUE;
-            break;
-
-          case '#':
-            for (LedId led = LED_GREEN; led < LED_COUNT; led++) {
-              status = LedOff(led);
-              if (status != HAL_OK) {
-                return status;
-              }
+        case '#':
+          for (LedId led = LED_GREEN; led < LED_COUNT; led++) {
+            status = LedOff(led);
+            if (status != HAL_OK) {
+              return status;
             }
+          }
 
-            for (LedId led = LED_GREEN; led < LED_COUNT; led++) {
-              status = ConsoleUpdateLedState(led);
-              if (status != HAL_OK) {
-                return status;
-              }
+          for (LedId led = LED_GREEN; led < LED_COUNT; led++) {
+            status = ConsoleUpdateLedState(led);
+            if (status != HAL_OK) {
+              return status;
             }
+          }
 
-            return HAL_OK;
+          return HAL_OK;
 
-          case '*':
-            current_state = CONSOLE_MAIN_MENU;
-            return ConsoleShowMainMenu();
-
-          default:
-            return HAL_OK;
-        }
-
-        status = LedToggle(selected_led);
-        if (status != HAL_OK) {
-          return status;
-        }
-
-        return ConsoleUpdateLedState(selected_led);
-      }
-
-
-      case CONSOLE_SYSTEM_STATUS:
-      case CONSOLE_TIMER_SETTINGS:
-        if (key == '*') {
+        case '*':
           current_state = CONSOLE_MAIN_MENU;
           return ConsoleShowMainMenu();
-        }
-        break;
+
+        default:
+          return HAL_OK;
+      }
+
+      status = LedToggle(selected_led);
+      if (status != HAL_OK) {
+        return status;
+      }
+
+      return ConsoleUpdateLedState(selected_led);
+    }
+
+    case CONSOLE_SYSTEM_STATUS:
+    case CONSOLE_TIMER_SETTINGS:
+      if (key == '*') {
+        current_state = CONSOLE_MAIN_MENU;
+        return ConsoleShowMainMenu();
+      }
+      break;
 
     default:
       current_state = CONSOLE_MAIN_MENU;
@@ -287,16 +340,12 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
   return HAL_OK;
 }
 
-
-
 static HAL_StatusTypeDef ConsoleUpdateLedState(LedId led) {
-  static const uint8_t positions[LED_COUNT] = {
-    [LED_GREEN] = 2U,
-    [LED_YELLOW] = 6U,
-    [LED_RED] = 10U,
-    [LED_WHITE] = 14U,
-    [LED_BLUE] = 18U
-  };
+  static const uint8_t positions[LED_COUNT] = {[LED_GREEN] = 2U,
+                                               [LED_YELLOW] = 6U,
+                                               [LED_RED] = 10U,
+                                               [LED_WHITE] = 14U,
+                                               [LED_BLUE] = 18U};
 
   if ((unsigned int)led >= LED_COUNT) {
     return HAL_ERROR;
@@ -314,14 +363,40 @@ static HAL_StatusTypeDef ConsoleUpdateLedState(LedId led) {
     return status;
   }
 
-  char value[2] = {
-    (state == GPIO_PIN_SET) ? '1' : '0',
-    '\0'
-  };
+  char value[2] = {(state == GPIO_PIN_SET) ? '1' : '0', '\0'};
 
   return LcdPrint(value);
 }
 
+static HAL_StatusTypeDef ConsoleUpdateTemperature(void) {
+  float temperature_c;
+  char reading[32] = "MCU Temp: --.- C";
+  char line[21];
 
+  HAL_StatusTypeDef status = TemperatureReadCelsius(&temperature_c);
 
+  if (status == HAL_OK &&
+      temperature_c >= -40.0f && temperature_c <= 125.0f) {
+    /* Round to tenths, then format using integer printing. */
+    int32_t tenths = (int32_t)(temperature_c * 10.0f +
+                             (temperature_c >= 0.0f ? 0.5f : -0.5f));
 
+    uint32_t magnitude =
+        (uint32_t)(tenths < 0 ? -tenths : tenths);
+
+    snprintf(reading, sizeof(reading), "MCU Temp: %s%lu.%lu C",
+             tenths < 0 ? "-" : "",
+             (unsigned long)(magnitude / 10U),
+             (unsigned long)(magnitude % 10U));
+  }
+
+  /* Pad the row to erase characters from the previous reading. */
+  snprintf(line, sizeof(line), "%-20.20s", reading);
+
+  status = LcdSetCursor(2, 0);
+  if (status != HAL_OK) {
+    return status;
+  }
+
+  return LcdPrint(line);
+}
