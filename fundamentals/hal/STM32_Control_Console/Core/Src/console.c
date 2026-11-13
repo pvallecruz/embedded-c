@@ -260,24 +260,13 @@ static HAL_StatusTypeDef ConsoleShowSystemStatus(void) {
 }
 
 HAL_StatusTypeDef ConsoleInit(void) {
-  HAL_StatusTypeDef status = LcdInit();
-
-  if (status != HAL_OK) {
-    return status;
-  }
-
+  /* The main loop initializes and services the LCD independently. */
   current_state = CONSOLE_MAIN_MENU;
 
   return ConsoleShowMainMenu();
 }
 
-HAL_StatusTypeDef ConsoleUpdate(void) {
-  char key = KeypadGetKey();
-  if (key == '#' && BuzzerAlarmIsActive()) {
-    BuzzerAlarmStop();
-    return HAL_OK;
-  }
-
+HAL_StatusTypeDef ConsoleUpdate(char key) {
   if (key == '\0') {
     if (current_state == CONSOLE_SYSTEM_STATUS &&
         (HAL_GetTick() / 1000U) != status_displayed_second) {

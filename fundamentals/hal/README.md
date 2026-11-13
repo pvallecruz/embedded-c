@@ -8,4 +8,6 @@ All projects in this category run without an operating system.
 
 - [Reusable Peripheral Modules — HAL](peripheral_modules_hal/README.md) — matching CMSIS interfaces with hardware-verified HAL behavior.
 
+- [STM32 Control Console](STM32_Control_Console/README.md) — keypad menus, buffered I2C LCD updates, LED control, MCU temperature, and a background timer alarm.
+
 [Back to Embedded C Fundamentals](../README.md)

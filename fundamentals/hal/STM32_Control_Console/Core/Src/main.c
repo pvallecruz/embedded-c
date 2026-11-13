@@ -26,9 +26,11 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "console.h"
+#include "lcd.h"
 #include "led.h"
 #include "buzzer.h"
 #include "countdown.h"
+#include "keypad.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,6 +53,8 @@
 /* USER CODE BEGIN PV */
 
 volatile HAL_StatusTypeDef console_status;
+volatile HAL_StatusTypeDef lcd_status;
+static uint8_t lcd_was_ready = 0U;
 static uint32_t console_retry_time = 0U;
 
 /* USER CODE END PV */
@@ -101,7 +105,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   LedInit();
-  console_status = ConsoleInit();
+  lcd_status = LcdInit();
+  console_status = HAL_OK;
   console_retry_time = HAL_GetTick();
 
   if (BuzzerInit() != HAL_OK) {
@@ -119,21 +124,39 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-  	if (CountdownUpdate()) {
-  	  BuzzerAlarmStart();
-  	}
+    if (CountdownUpdate()) {
+      BuzzerAlarmStart();
+    }
 
-  	BuzzerUpdate();
+    BuzzerUpdate();
 
-    if (console_status == HAL_OK) {
-      console_status = ConsoleUpdate();
+    char key = KeypadGetKey();
 
-      if (console_status != HAL_OK) {
+    if (key == '#' && BuzzerAlarmIsActive()) {
+      BuzzerAlarmStop();
+      key = '\0';
+    }
+
+    lcd_status = LcdUpdate();
+    if (lcd_status == HAL_OK) {
+      if (!lcd_was_ready) {
+        console_status = ConsoleInit();
+        console_retry_time = HAL_GetTick();
+        lcd_was_ready = 1U;
+      }
+
+      if (console_status == HAL_OK) {
+        console_status = ConsoleUpdate(key);
+
+        if (console_status != HAL_OK) {
+          console_retry_time = HAL_GetTick();
+        }
+      } else if ((uint32_t)(HAL_GetTick() - console_retry_time) >= 1000U) {
+        console_status = ConsoleInit();
         console_retry_time = HAL_GetTick();
       }
-    } else if ((uint32_t)(HAL_GetTick() - console_retry_time) >= 1000U) {
-      console_status = ConsoleInit();
-      console_retry_time = HAL_GetTick();
+    } else {
+      lcd_was_ready = 0U;
     }
 
     HAL_Delay(5);

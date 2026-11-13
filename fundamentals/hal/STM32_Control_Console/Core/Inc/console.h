@@ -18,7 +18,7 @@ typedef enum {
 } ConsoleState;
 
 HAL_StatusTypeDef ConsoleInit(void);
-HAL_StatusTypeDef ConsoleUpdate(void);
+HAL_StatusTypeDef ConsoleUpdate(char key);
 
 
 
