@@ -5,20 +5,23 @@
  *      Author: pedrol.valle-cruz
  */
 
-#include "console.h"
-
 #include <stdio.h>
+#include <string.h>
 
+#include "console.h"
 #include "keypad.h"
 #include "lcd.h"
 #include "led.h"
 #include "temperature.h"
+#include "buzzer.h"
+#include "countdown.h"
 
 static HAL_StatusTypeDef ConsoleUpdateLedState(LedId led);
 static HAL_StatusTypeDef ConsoleUpdateTemperature(void);
 
 static ConsoleState current_state = CONSOLE_MAIN_MENU;
 static uint32_t status_displayed_second = 0U;
+static uint32_t timer_entry_seconds = 0U;
 
 static HAL_StatusTypeDef ConsoleShowMainMenu(void) {
   HAL_StatusTypeDef status = LcdClear();
@@ -68,44 +71,78 @@ static HAL_StatusTypeDef ConsoleShowMainMenu(void) {
   return LcdPrint("3. Timer Settings");
 }
 
-static HAL_StatusTypeDef ConsoleShowSubmenu(const char* title) {
-  HAL_StatusTypeDef status = LcdClear();
+static HAL_StatusTypeDef ConsoleUpdateTimerDisplay(uint8_t force) {
+  static char previous[3][21] = {{0}};
+  char lines[3][21];
+  char value[32];
 
+  CountdownState state = CountdownGetState();
+  const char *instructions;
+  const char *navigation;
+
+  if (state == COUNTDOWN_RUNNING) {
+    snprintf(value, sizeof(value), "Remaining: %lu s",
+             (unsigned long)CountdownGetRemainingSeconds());
+
+    instructions = "# Cancel";
+    navigation = "* Back";
+  } else if (state == COUNTDOWN_COMPLETE) {
+    snprintf(value, sizeof(value), "Timer complete");
+
+    instructions = BuzzerAlarmIsActive() ? "# Silence alarm" : "# Reset";
+    navigation = "* Back";
+  } else {
+    snprintf(value, sizeof(value), "Seconds: %lu",
+             (unsigned long)timer_entry_seconds);
+
+    instructions = timer_entry_seconds == 0U
+                       ? "Enter 1-999 seconds"
+                       : "# Start";
+    navigation = "D Clear   * Back";
+  }
+
+  snprintf(lines[0], sizeof(lines[0]), "%-20.20s", value);
+  snprintf(lines[1], sizeof(lines[1]), "%-20.20s", instructions);
+  snprintf(lines[2], sizeof(lines[2]), "%-20.20s", navigation);
+
+  for (uint8_t row = 0U; row < 3U; row++) {
+    if (!force && strcmp(lines[row], previous[row]) == 0) {
+      continue;
+    }
+
+    HAL_StatusTypeDef status = LcdSetCursor(row + 1U, 0);
+    if (status != HAL_OK) {
+      return status;
+    }
+
+    status = LcdPrint(lines[row]);
+    if (status != HAL_OK) {
+      return status;
+    }
+
+    memcpy(previous[row], lines[row], sizeof(previous[row]));
+  }
+
+  return HAL_OK;
+}
+
+static HAL_StatusTypeDef ConsoleShowTimerSettings(void) {
+  HAL_StatusTypeDef status = LcdClear();
   if (status != HAL_OK) {
     return status;
   }
 
   status = LcdSetCursor(0, 0);
-
   if (status != HAL_OK) {
     return status;
   }
 
-  status = LcdPrint(title);
-
+  status = LcdPrint("TIMER SETTINGS");
   if (status != HAL_OK) {
     return status;
   }
 
-  status = LcdSetCursor(2, 0);
-
-  if (status != HAL_OK) {
-    return status;
-  }
-
-  status = LcdPrint("Under construction");
-
-  if (status != HAL_OK) {
-    return status;
-  }
-
-  status = LcdSetCursor(3, 0);
-
-  if (status != HAL_OK) {
-    return status;
-  }
-
-  return LcdPrint("* = Back");
+  return ConsoleUpdateTimerDisplay(1U);
 }
 
 static HAL_StatusTypeDef ConsoleShowLedControl(void) {
@@ -236,11 +273,19 @@ HAL_StatusTypeDef ConsoleInit(void) {
 
 HAL_StatusTypeDef ConsoleUpdate(void) {
   char key = KeypadGetKey();
+  if (key == '#' && BuzzerAlarmIsActive()) {
+    BuzzerAlarmStop();
+    return HAL_OK;
+  }
 
   if (key == '\0') {
     if (current_state == CONSOLE_SYSTEM_STATUS &&
         (HAL_GetTick() / 1000U) != status_displayed_second) {
       return ConsoleUpdateSystemStatus();
+    }
+
+    if (current_state == CONSOLE_TIMER_SETTINGS) {
+      return ConsoleUpdateTimerDisplay(0U);
     }
 
     return HAL_OK;
@@ -259,7 +304,7 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
 
         case '3':
           current_state = CONSOLE_TIMER_SETTINGS;
-          return ConsoleShowSubmenu("TIMER SETTINGS");
+          return ConsoleShowTimerSettings();
 
         default:
           break;
@@ -325,10 +370,56 @@ HAL_StatusTypeDef ConsoleUpdate(void) {
     }
 
     case CONSOLE_SYSTEM_STATUS:
+      if (key == '*') {
+        current_state = CONSOLE_MAIN_MENU;
+        return ConsoleShowMainMenu();
+      }
+      break;
+
     case CONSOLE_TIMER_SETTINGS:
       if (key == '*') {
         current_state = CONSOLE_MAIN_MENU;
         return ConsoleShowMainMenu();
+      }
+
+      if (key == '#') {
+        CountdownState state = CountdownGetState();
+
+        if (state == COUNTDOWN_RUNNING ||
+            state == COUNTDOWN_COMPLETE) {
+          CountdownReset();
+          return HAL_OK;
+        }
+
+        if (timer_entry_seconds == 0U) {
+          return HAL_OK;
+        }
+
+        if (!CountdownStart(timer_entry_seconds)) {
+          return HAL_ERROR;
+        }
+
+        return HAL_OK;
+      }
+
+      /* Editing is allowed only while idle. */
+      if (CountdownGetState() != COUNTDOWN_IDLE) {
+        return HAL_OK;
+      }
+
+      if (key == 'D') {
+        timer_entry_seconds = 0U;
+        return ConsoleUpdateTimerDisplay(0U);
+      }
+
+      if (key >= '0' && key <= '9') {
+        uint32_t candidate =
+            timer_entry_seconds * 10U + (uint32_t)(key - '0');
+
+        if (candidate <= 999U) {
+          timer_entry_seconds = candidate;
+          return ConsoleUpdateTimerDisplay(0U);
+        }
       }
       break;
 
