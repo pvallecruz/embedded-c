@@ -22,8 +22,27 @@
 void ST7796_Init(void);
 void ST7796_FillScreen(uint16_t color);
 void ST7796_DrawPixel(uint16_t x, uint16_t y, uint16_t color);
+void ST7796_DrawLine(int16_t x0, int16_t y0,
+                     int16_t x1, int16_t y1,
+                     uint16_t color);
+void ST7796_FillRect(uint16_t x, uint16_t y,
+                     uint16_t width, uint16_t height,
+                     uint16_t color);
 
+void ST7796_DrawChar(uint16_t x, uint16_t y,
+                     char character, uint16_t color,
+                     uint8_t scale);
 
+void ST7796_DrawString(uint16_t x, uint16_t y,
+                       const char* text, uint16_t color,
+                       uint8_t scale);
 
+void ST7796_DrawRGB565Buffer(
+  uint16_t x,
+  uint16_t y,
+  uint16_t width,
+  uint16_t height,
+  const uint16_t* pixels
+);
 
 #endif /* INC_ST7796_H_ */
