@@ -42,11 +42,9 @@
 /* USER CODE BEGIN PD */
 
 #define FRAME_INTERVAL_MS 33U
-#define PHASE_INCREMENT 0.05f
-#define TWO_PI 6.2831853f
 #define ADC_SAMPLES_PER_HALF 802U
 #define ADC_BUFFER_SIZE (ADC_SAMPLES_PER_HALF * 2U)
-#define ADC_DISPLAY_SAMPLES 401U
+#define ADC_DISPLAY_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 #define ADC_TRIGGER_LEVEL 2048U
 
 /* USER CODE END PD */
@@ -60,28 +58,23 @@
 
 /* USER CODE BEGIN PV */
 
-volatile uint32_t elapsed_time = 0;
-volatile uint32_t apb2_clock = 0;
-volatile uint32_t measurement_count = 0;
-volatile uint32_t cpu_clock = 0;
 static uint32_t LastFrameTick = 0U;
-static float WaveformPhase = 0.0f;
 volatile uint32_t FrameCycles = 0U;
 volatile float FrameTimeMs = 0.0f;
-volatile uint32_t AdcRawValue = 0U;
-volatile float AdcVoltage = 0.0f;
 
-volatile uint32_t drawing_cycles = 0;
-volatile float drawing_ms = 0;
-volatile uint32_t start_cycles = 0;
 volatile float MaxFrameTimeMs = 0.0f;
 volatile float MinFrameTimeMs = 1000000.0f;
 volatile float SpiTransferMs = 0.0f;
 volatile float ActualFPS = 0.0f;
 static uint32_t PreviousFrameStart = 0U;
+// DMA writes AdcBuffer; the ISR publishes a copy into AdcCaptureBuffer.
 uint16_t AdcBuffer[ADC_BUFFER_SIZE];
 uint16_t AdcSnapshot[ADC_DISPLAY_SAMPLES];
 uint16_t AdcDisplayBuffer[ADC_DISPLAY_SAMPLES];
+uint16_t AdcCaptureBuffer[ADC_SAMPLES_PER_HALF];
+// 0: ISR may write. 1: main owns the capture until processing finishes.
+volatile uint32_t AdcCaptureReady = 0U;
+volatile uint32_t AdcDroppedCaptureCount = 0U;
 
 volatile float ActualSampleRate = 0.0f;
 
@@ -96,6 +89,12 @@ static uint32_t LastDisplayedSnapshot = 0U;
 volatile uint32_t DisplaySnapshotCount = 0U;
 volatile uint16_t AdcMinValue = 4095U;
 volatile uint16_t AdcMaxValue = 0U;
+// Main-loop trigger processing time, including any interrupt preemption.
+volatile uint32_t AdcProcessingCycles = 0U;
+volatile uint32_t MaxAdcProcessingCycles = 0U;
+// Successful DMA-half copy and publication time; excludes skipped captures.
+volatile uint32_t AdcCaptureCopyCycles = 0U;
+volatile uint32_t MaxAdcCaptureCopyCycles = 0U;
 
 /* USER CODE END PV */
 
@@ -103,13 +102,12 @@ volatile uint16_t AdcMaxValue = 0U;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
+static void RetroScope_ProcessAdcCapture(const uint16_t *Samples);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-extern volatile uint32_t SpiTransferCycles;
-extern volatile uint16_t StripsDrawn;
 
 static void RetroScope_EnableCycleCounter(void) {
   // Enable trace functionality
@@ -123,12 +121,8 @@ static void RetroScope_EnableCycleCounter(void) {
 }
 
 static uint8_t RetroScope_GetAdcSnapshot(void) {
-  uint32_t primask = __get_PRIMASK();
-
-  __disable_irq();
-
+  // Snapshot production and display copying both run in the main loop.
   if (AdcSnapshotCount == LastDisplayedSnapshot) {
-    __set_PRIMASK(primask);
     return 0U;
   }
 
@@ -137,8 +131,6 @@ static uint8_t RetroScope_GetAdcSnapshot(void) {
   }
 
   LastDisplayedSnapshot = AdcSnapshotCount;
-
-  __set_PRIMASK(primask);
 
   DisplaySnapshotCount++;
 
@@ -210,10 +202,7 @@ int main(void) {
 
   RetroScope_EnableCycleCounter();
 
-  RetroScope_GenerateWaveform(WaveformPhase);
-  RetroScope_DrawWaveformFrame();
-
-  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcBuffer, ADC_BUFFER_SIZE) !=
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)AdcBuffer, ADC_BUFFER_SIZE) !=
       HAL_OK) {
     Error_Handler();
   }
@@ -228,16 +217,6 @@ int main(void) {
 
   LastFrameTick = HAL_GetTick();
 
-  /* start_cycles = DWT->CYCCNT;
-
-  RetroScope_DrawWaveformAdaptive();
-
-  drawing_cycles = DWT->CYCCNT - start_cycles;
-
-  drawing_ms =
-      (float)drawing_cycles * 1000.0f
-      / (float)HAL_RCC_GetHCLKFreq();*/
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -246,6 +225,16 @@ int main(void) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (AdcCaptureReady != 0U) {
+      __DMB();
+
+      RetroScope_ProcessAdcCapture(AdcCaptureBuffer);
+
+      __DMB();
+      // Release only after all reads of the capture have completed.
+      AdcCaptureReady = 0U;
+    }
+
     uint32_t CurrentTick = HAL_GetTick();
 
     if ((uint32_t)(CurrentTick - LastFrameTick) >= FRAME_INTERVAL_MS) {
@@ -258,24 +247,17 @@ int main(void) {
       }
 
       PreviousFrameStart = CurrentTick;
-
       LastFrameTick = CurrentTick;
 
-      // Advance the waveform phase
-      WaveformPhase += PHASE_INCREMENT;
-
-      if (WaveformPhase >= TWO_PI) {
-        WaveformPhase -= TWO_PI;
-      }
-
       SpiTransferCycles = 0U;
+
       uint32_t StartCycles = DWT->CYCCNT;
 
-      // Generate and draw the next frame
+      // Draw the latest processed ADC snapshot.
       if (RetroScope_GetAdcSnapshot()) {
         RetroScope_MeasureAdcRange();
 
-        RetroScope_LoadADCWaveform(AdcDisplayBuffer);
+        RetroScope_LoadAdcWaveform(AdcDisplayBuffer);
         RetroScope_DrawWaveformFrame();
       }
 
@@ -357,14 +339,44 @@ void SystemClock_Config(void) {
 
 /* USER CODE BEGIN 4 */
 
-static void RetroScope_CopyAdcSamples(uint16_t start) {
+// ISR only: copy before DMA returns to this half (nominally 80.2 ms).
+// The occupied-buffer counter does not detect a late DMA interrupt.
+static void RetroScope_PublishAdcCapture(const volatile uint16_t *Samples) {
+  if (AdcCaptureReady != 0U) {
+    AdcDroppedCaptureCount++;
+    return;
+  }
+
+  uint32_t StartCycles = DWT->CYCCNT;
+
+  __DMB();
+
+  for (uint16_t i = 0U; i < ADC_SAMPLES_PER_HALF; i++) {
+    AdcCaptureBuffer[i] = Samples[i];
+  }
+
+  __DMB();
+  // Publish only after the complete buffer is visible.
+  AdcCaptureReady = 1U;
+
+  uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
+
+  AdcCaptureCopyCycles = ElapsedCycles;
+
+  if (ElapsedCycles > MaxAdcCaptureCopyCycles) {
+    MaxAdcCaptureCopyCycles = ElapsedCycles;
+  }
+}
+
+static void RetroScope_ProcessAdcCapture(const uint16_t *Samples) {
+  uint32_t StartCycles = DWT->CYCCNT;
   uint16_t triggerIndex = 0U;
   uint8_t triggerFound = 0U;
 
   // Find a rising edge with enough samples remaining.
   for (uint16_t i = 1U; i <= ADC_SAMPLES_PER_HALF - ADC_DISPLAY_SAMPLES; i++) {
-    uint16_t previous = AdcBuffer[start + i - 1U];
-    uint16_t current = AdcBuffer[start + i];
+    uint16_t previous = Samples[i - 1U];
+    uint16_t current = Samples[i];
 
     if (previous < ADC_TRIGGER_LEVEL && current >= ADC_TRIGGER_LEVEL) {
       triggerIndex = i;
@@ -378,25 +390,33 @@ static void RetroScope_CopyAdcSamples(uint16_t start) {
     triggerIndex = 0U;
   }
 
-  // Copy 401 samples starting at the trigger.
+  // Copy the display window starting at the trigger.
   for (uint16_t i = 0U; i < ADC_DISPLAY_SAMPLES; i++) {
-    AdcSnapshot[i] = AdcBuffer[start + triggerIndex + i];
+    AdcSnapshot[i] = Samples[triggerIndex + i];
   }
 
   AdcLatestSample = AdcSnapshot[ADC_DISPLAY_SAMPLES - 1U];
   AdcSnapshotCount++;
+
+  uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
+
+  AdcProcessingCycles = ElapsedCycles;
+
+  if (ElapsedCycles > MaxAdcProcessingCycles) {
+    MaxAdcProcessingCycles = ElapsedCycles;
+  }
 }
 
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
   if (hadc->Instance == ADC1) {
-    RetroScope_CopyAdcSamples(0U);
+    RetroScope_PublishAdcCapture(&AdcBuffer[0U]);
     AdcHalfCompleteCount++;
   }
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
   if (hadc->Instance == ADC1) {
-    RetroScope_CopyAdcSamples(ADC_SAMPLES_PER_HALF);
+    RetroScope_PublishAdcCapture(&AdcBuffer[ADC_SAMPLES_PER_HALF]);
     AdcBufferCompleteCount++;
   }
 }
@@ -423,7 +443,7 @@ void Error_Handler(void) {
  * @param  line: assert_param error line source number
  * @retval None
  */
-void assert_failed(uint8_t* file, uint32_t line) {
+void assert_failed(uint8_t *file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,

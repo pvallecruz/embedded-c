@@ -21,10 +21,8 @@ static HAL_StatusTypeDef ST7796_WriteData(uint8_t data);
 volatile uint32_t SpiTransferCycles = 0U;
 
 // Public functions
-static void ST7796_SetAddressWindow(
-  uint16_t x0, uint16_t y0,
-  uint16_t x1, uint16_t y1
-) {
+static void ST7796_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1,
+                                    uint16_t y1) {
   // Set column address range
   if (ST7796_WriteCommand(0x2A) != HAL_OK) {
     Error_Handler();
@@ -86,13 +84,7 @@ void ST7796_Init(void) {
 }
 
 void ST7796_FillScreen(uint16_t color) {
-  ST7796_FillRect(
-    0,
-    0,
-    ST7796_WIDTH,
-    ST7796_HEIGHT,
-    color
-  );
+  ST7796_FillRect(0, 0, ST7796_WIDTH, ST7796_HEIGHT, color);
 }
 
 // Private functions
@@ -153,8 +145,7 @@ void ST7796_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
 }
 
 // Bresenham's line algorithm
-void ST7796_DrawLine(int16_t x0, int16_t y0,
-                     int16_t x1, int16_t y1,
+void ST7796_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
                      uint16_t color) {
   int32_t dx = abs((int32_t)x1 - x0);
   int32_t dy = -abs((int32_t)y1 - y0);
@@ -187,13 +178,10 @@ void ST7796_DrawLine(int16_t x0, int16_t y0,
   }
 }
 
-void ST7796_FillRect(uint16_t x, uint16_t y,
-                     uint16_t width, uint16_t height,
+void ST7796_FillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height,
                      uint16_t color) {
-
   // Reject invalid starting coordinates or empty rectangles
-  if (x >= ST7796_WIDTH || y >= ST7796_HEIGHT ||
-      width == 0 || height == 0) {
+  if (x >= ST7796_WIDTH || y >= ST7796_HEIGHT || width == 0 || height == 0) {
     return;
   }
 
@@ -207,11 +195,7 @@ void ST7796_FillRect(uint16_t x, uint16_t y,
   }
 
   // Configure the rectangular address window
-  ST7796_SetAddressWindow(
-    x, y,
-    x + width - 1,
-    y + height - 1
-  );
+  ST7796_SetAddressWindow(x, y, x + width - 1, y + height - 1);
 
   // Begin writing pixel data
   if (ST7796_WriteCommand(0x2C) != HAL_OK) {
@@ -232,11 +216,10 @@ void ST7796_FillRect(uint16_t x, uint16_t y,
   HAL_GPIO_WritePin(TFT_CS_GPIO_Port, TFT_CS_Pin, GPIO_PIN_RESET);
 
   while (remaining_pixels > 0) {
-    uint32_t pixels_to_send =
-      (remaining_pixels > 64) ? 64 : remaining_pixels;
+    uint32_t pixels_to_send = (remaining_pixels > 64) ? 64 : remaining_pixels;
 
-    if (HAL_SPI_Transmit(&hspi1, pixel_data,
-                         (uint16_t)(pixels_to_send * 2), 1000) != HAL_OK) {
+    if (HAL_SPI_Transmit(&hspi1, pixel_data, (uint16_t)(pixels_to_send * 2),
+                         1000) != HAL_OK) {
       HAL_GPIO_WritePin(TFT_CS_GPIO_Port, TFT_CS_Pin, GPIO_PIN_SET);
       Error_Handler();
     }
@@ -247,39 +230,28 @@ void ST7796_FillRect(uint16_t x, uint16_t y,
   HAL_GPIO_WritePin(TFT_CS_GPIO_Port, TFT_CS_Pin, GPIO_PIN_SET);
 }
 
-void ST7796_DrawChar(uint16_t x, uint16_t y,
-                     char character, uint16_t color,
+void ST7796_DrawChar(uint16_t x, uint16_t y, char character, uint16_t color,
                      uint8_t scale) {
-
   if (scale == 0) {
     return;
   }
 
-  const uint8_t* bitmap = Font5x7_GetCharacter(character);
+  const uint8_t *bitmap = Font5x7_GetCharacter(character);
 
   for (uint8_t row = 0; row < FONT_HEIGHT; row++) {
     uint8_t row_data = bitmap[row];
 
     for (uint8_t column = 0; column < FONT_WIDTH; column++) {
-
       if (row_data & (1U << (4 - column))) {
-
-        ST7796_FillRect(
-          x + column * scale,
-          y + row * scale,
-          scale,
-          scale,
-          color
-        );
+        ST7796_FillRect(x + column * scale, y + row * scale, scale, scale,
+                        color);
       }
     }
   }
 }
 
-void ST7796_DrawString(uint16_t x, uint16_t y,
-                       const char* text, uint16_t color,
+void ST7796_DrawString(uint16_t x, uint16_t y, const char *text, uint16_t color,
                        uint8_t scale) {
-
   if (text == NULL || scale == 0) {
     return;
   }
@@ -288,31 +260,19 @@ void ST7796_DrawString(uint16_t x, uint16_t y,
   uint32_t advance = (FONT_WIDTH + FONT_SPACING) * scale;
 
   while (*text != '\0') {
-
     if (cursor_x + FONT_WIDTH * scale > ST7796_WIDTH) {
       break;
     }
 
-    ST7796_DrawChar(
-      (uint16_t)cursor_x,
-      y,
-      *text,
-      color,
-      scale
-    );
+    ST7796_DrawChar((uint16_t)cursor_x, y, *text, color, scale);
 
     cursor_x += advance;
     text++;
   }
 }
 
-void ST7796_DrawRGB565Buffer(
-  uint16_t x,
-  uint16_t y,
-  uint16_t width,
-  uint16_t height,
-  const uint16_t* pixels
-) {
+void ST7796_DrawRGB565Buffer(uint16_t x, uint16_t y, uint16_t width,
+                             uint16_t height, const uint16_t *pixels) {
   if (pixels == NULL || width == 0U || height == 0U) {
     return;
   }
@@ -321,16 +281,11 @@ void ST7796_DrawRGB565Buffer(
     return;
   }
 
-  if (width > ST7796_WIDTH - x ||
-      height > ST7796_HEIGHT - y) {
+  if (width > ST7796_WIDTH - x || height > ST7796_HEIGHT - y) {
     return;
   }
 
-  ST7796_SetAddressWindow(
-    x, y,
-    x + width - 1U,
-    y + height - 1U
-  );
+  ST7796_SetAddressWindow(x, y, x + width - 1U, y + height - 1U);
 
   ST7796_WriteCommand(0x2C);
 
@@ -355,12 +310,7 @@ void ST7796_DrawRGB565Buffer(
 
     uint32_t start_cycles = DWT->CYCCNT;
 
-    HAL_SPI_Transmit(
-      &hspi1,
-      tx_buffer,
-      chunk * 2U,
-      HAL_MAX_DELAY
-    );
+    HAL_SPI_Transmit(&hspi1, tx_buffer, chunk * 2U, HAL_MAX_DELAY);
 
     SpiTransferCycles += DWT->CYCCNT - start_cycles;
   }

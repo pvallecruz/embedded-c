@@ -4,58 +4,44 @@
  *  Created on: Nov 15, 2026
  *      Author: pedrol.valle-cruz
  */
-#include <math.h>
 #include <stdint.h>
 
 #include "retroscope_ui.h"
 #include "st7796.h"
 
-
 // Screen regions
-#define HEADER_HEIGHT    34U
-#define WAVEFORM_HEIGHT  224U
-#define INFO_HEIGHT      62U
+#define HEADER_HEIGHT 34U
+#define WAVEFORM_HEIGHT 224U
+#define INFO_HEIGHT 62U
 
-#define WAVEFORM_Y       HEADER_HEIGHT
-#define INFO_Y           (HEADER_HEIGHT + WAVEFORM_HEIGHT)
+#define WAVEFORM_Y HEADER_HEIGHT
+#define INFO_Y (HEADER_HEIGHT + WAVEFORM_HEIGHT)
 
 // Interface colors (RGB565)
-#define UI_BACKGROUND     0x0000U
-#define UI_PANEL_COLOR    0x1948U
-#define UI_WAVE_COLOR     0x0841U
-#define UI_BORDER_COLOR   0x4A69U
+#define UI_BACKGROUND 0x0000U
+#define UI_PANEL_COLOR 0x1948U
+#define UI_WAVE_COLOR 0x0841U
+#define UI_BORDER_COLOR 0x4A69U
 #define UI_WAVEFORM_COLOR 0xFFE0U
 
 // Graticule geometry
-#define GRID_X          40U
-#define GRID_Y          46U
-#define GRID_WIDTH      400U
-#define GRID_HEIGHT     200U
-#define GRID_SPACING    40U
+#define GRID_X 40U
+#define GRID_Y 46U
+#define GRID_WIDTH 400U
+#define GRID_HEIGHT 200U
+#define GRID_SPACING 40U
 
 // Graticule colors (RGB565)
-#define GRID_COLOR      0x2B4AU
+#define GRID_COLOR 0x2B4AU
 #define GRID_AXIS_COLOR 0x5EAFU
 
 // Waveform geometry
-#define WAVEFORM_SAMPLES  	401U
-#define WAVEFORM_AMPLITUDE 	60.0f
-#define WAVEFORM_CYCLES  	2.0f
-#define PI_F             	3.14159265f
+#define WAVEFORM_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 
 // Rendering buffer
-#define RENDER_STRIP_WIDTH  20U
-#define RENDER_STRIP_HEIGHT GRID_HEIGHT
-#define RENDER_BUFFER_WIDTH  (RENDER_STRIP_WIDTH + 1U)
-#define RENDER_BUFFER_SIZE \
-  (RENDER_BUFFER_WIDTH * (GRID_HEIGHT + 1U))
-
-
-#define WAVEFORM_TOP     85U
-#define WAVEFORM_BOTTOM  207U
-
-#define CLIPPED_HEIGHT \
-  (WAVEFORM_BOTTOM - WAVEFORM_TOP + 1U)
+#define RENDER_STRIP_WIDTH 20U
+#define RENDER_BUFFER_WIDTH (RENDER_STRIP_WIDTH + 1U)
+#define RENDER_BUFFER_SIZE (RENDER_BUFFER_WIDTH * (GRID_HEIGHT + 1U))
 
 static uint16_t Waveform[WAVEFORM_SAMPLES];
 static uint16_t RenderBuffer[RENDER_BUFFER_SIZE];
@@ -69,38 +55,18 @@ void RetroScope_DrawLayout(void) {
   ST7796_FillScreen(UI_BACKGROUND);
 
   // Header
-  ST7796_FillRect(
-    0, 0,
-    ST7796_WIDTH, HEADER_HEIGHT,
-    UI_PANEL_COLOR
-  );
+  ST7796_FillRect(0, 0, ST7796_WIDTH, HEADER_HEIGHT, UI_PANEL_COLOR);
 
   // Waveform viewport
-  ST7796_FillRect(
-    0, WAVEFORM_Y,
-    ST7796_WIDTH, WAVEFORM_HEIGHT,
-    UI_WAVE_COLOR
-  );
+  ST7796_FillRect(0, WAVEFORM_Y, ST7796_WIDTH, WAVEFORM_HEIGHT, UI_WAVE_COLOR);
 
   // Bottom information bar
-  ST7796_FillRect(
-    0, INFO_Y,
-    ST7796_WIDTH, INFO_HEIGHT,
-    UI_PANEL_COLOR
-  );
+  ST7796_FillRect(0, INFO_Y, ST7796_WIDTH, INFO_HEIGHT, UI_PANEL_COLOR);
 
   // Separators
-  ST7796_DrawLine(
-    0, WAVEFORM_Y,
-    ST7796_WIDTH - 1, WAVEFORM_Y,
-    UI_BORDER_COLOR
-  );
+  ST7796_DrawLine(0, WAVEFORM_Y, ST7796_WIDTH - 1, WAVEFORM_Y, UI_BORDER_COLOR);
 
-  ST7796_DrawLine(
-    0, INFO_Y,
-    ST7796_WIDTH - 1, INFO_Y,
-    UI_BORDER_COLOR
-  );
+  ST7796_DrawLine(0, INFO_Y, ST7796_WIDTH - 1, INFO_Y, UI_BORDER_COLOR);
 }
 
 void RetroScope_DrawGrid(void) {
@@ -121,256 +87,37 @@ void RetroScope_DrawGrid(void) {
   }
 
   // Draw brighter vertical reference axis
-  ST7796_DrawLine(
-    x_center, GRID_Y,
-    x_center, y_end,
-    GRID_AXIS_COLOR
-  );
+  ST7796_DrawLine(x_center, GRID_Y, x_center, y_end, GRID_AXIS_COLOR);
 
   // Draw brighter horizontal reference axis
-  ST7796_DrawLine(
-    GRID_X, y_center,
-    x_end, y_center,
-    GRID_AXIS_COLOR
-  );
+  ST7796_DrawLine(GRID_X, y_center, x_end, y_center, GRID_AXIS_COLOR);
 }
 
 void RetroScope_DrawLabels(void) {
-
   // Header title
-  ST7796_DrawString(
-    12, 10,
-    "RETROSCOPE",
-    ST7796_WHITE,
-    2
-  );
+  ST7796_DrawString(12, 10, "RETROSCOPE", ST7796_WHITE, 2);
 
   // Header status indicators
-  ST7796_DrawString(
-    360, 10,
-    "RUN",
-    ST7796_GREEN,
-    2
-  );
+  ST7796_DrawString(360, 10, "RUN", ST7796_GREEN, 2);
 
-  ST7796_DrawString(
-    420, 10,
-    "AUTO",
-    ST7796_WHITE,
-    1
-  );
+  ST7796_DrawString(420, 10, "AUTO", ST7796_WHITE, 1);
 
   // Bottom information panel
-  ST7796_DrawString(
-    15, 273,
-    "CH1",
-    ST7796_GREEN,
-    2
-  );
+  ST7796_DrawString(15, 273, "CH1", ST7796_GREEN, 2);
 
-  ST7796_DrawString(
-    110, 273,
-    "V/DIV",
-    ST7796_WHITE,
-    2
-  );
+  ST7796_DrawString(110, 273, "V/DIV", ST7796_WHITE, 2);
 
-  ST7796_DrawString(
-    250, 273,
-    "TIME/DIV",
-    ST7796_WHITE,
-    2
-  );
+  ST7796_DrawString(250, 273, "TIME/DIV", ST7796_WHITE, 2);
 }
 
-void RetroScope_GenerateWaveform(float phase_offset) {
-  const float center_y = GRID_Y + GRID_HEIGHT / 2.0f;
-
-  for (uint16_t i = 0; i < WAVEFORM_SAMPLES; i++) {
-    float phase =
-        (2.0f * PI_F * WAVEFORM_CYCLES * i)
-        / (WAVEFORM_SAMPLES - 1U);
-
-    Waveform[i] = (uint16_t)(
-        center_y - sinf(phase + phase_offset)
-        * WAVEFORM_AMPLITUDE
-    );
-  }
-}
-
-void RetroScope_DrawWaveform(void) {
-
-  //RetroScope_GenerateWaveform();
-
-  for (uint16_t i = 1; i < WAVEFORM_SAMPLES; i++) {
-
-    ST7796_DrawLine(
-      GRID_X + i - 1U,
-      Waveform[i - 1U],
-      GRID_X + i,
-      Waveform[i],
-      UI_WAVEFORM_COLOR
-    );
-  }
-}
-
-static void RetroScope_PrepareStrip(uint16_t start_x) {
-
-  for (uint16_t y = 0; y < RENDER_STRIP_HEIGHT; y++) {
-
-    uint16_t screen_y = GRID_Y + y;
-
-    for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-      uint16_t screen_x = start_x + x;
-      uint16_t color = UI_WAVE_COLOR;
-
-      if ((screen_x - GRID_X) % GRID_SPACING == 0U ||
-          (screen_y - GRID_Y) % GRID_SPACING == 0U) {
-        color = GRID_COLOR;
-      }
-
-      if (screen_x == GRID_X + GRID_WIDTH / 2U ||
-          screen_y == GRID_Y + GRID_HEIGHT / 2U) {
-        color = GRID_AXIS_COLOR;
-      }
-
-      RenderBuffer[y * RENDER_STRIP_WIDTH + x] = color;
-    }
-  }
-}
-
-static void RetroScope_RenderWaveformStrip(uint16_t start_x) {
-
-  for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-    uint16_t sample_index = start_x + x - GRID_X;
-    uint16_t waveform_y = Waveform[sample_index];
-
-    if (waveform_y >= GRID_Y &&
-        waveform_y < GRID_Y + GRID_HEIGHT) {
-
-      uint16_t local_y = waveform_y - GRID_Y;
-
-      RenderBuffer[local_y * RENDER_STRIP_WIDTH + x] =
-          UI_WAVEFORM_COLOR;
-    }
-  }
-}
-
-void RetroScope_DrawWaveformBuffered(void) {
-
-  for (uint16_t x = GRID_X;
-       x < GRID_X + GRID_WIDTH;
-       x += RENDER_STRIP_WIDTH) {
-
-    RetroScope_PrepareStrip(x);
-
-    RetroScope_RenderWaveformStrip(x);
-
-    ST7796_DrawRGB565Buffer(
-      x,
-      GRID_Y,
-      RENDER_STRIP_WIDTH,
-      RENDER_STRIP_HEIGHT,
-      RenderBuffer
-    );
-  }
-}
-
-void RetroScope_DrawWaveformClipped(void) {
-
-  for (uint16_t start_x = GRID_X;
-       start_x < GRID_X + GRID_WIDTH;
-       start_x += RENDER_STRIP_WIDTH) {
-
-    // Build the clipped background and grid
-    for (uint16_t y = 0; y < CLIPPED_HEIGHT; y++) {
-
-      uint16_t screen_y = WAVEFORM_TOP + y;
-
-      for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-        uint16_t screen_x = start_x + x;
-        uint16_t color = UI_WAVE_COLOR;
-
-        if ((screen_x - GRID_X) % GRID_SPACING == 0U ||
-            (screen_y - GRID_Y) % GRID_SPACING == 0U) {
-          color = GRID_COLOR;
-        }
-
-        if (screen_x == GRID_X + GRID_WIDTH / 2U ||
-            screen_y == GRID_Y + GRID_HEIGHT / 2U) {
-          color = GRID_AXIS_COLOR;
-        }
-
-        RenderBuffer[y * RENDER_STRIP_WIDTH + x] = color;
-      }
-    }
-
-    // Add waveform pixels
-    for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-      uint16_t sample_index = start_x + x - GRID_X;
-      uint16_t waveform_y = Waveform[sample_index];
-
-      if (waveform_y >= WAVEFORM_TOP &&
-          waveform_y <= WAVEFORM_BOTTOM) {
-
-        uint16_t local_y = waveform_y - WAVEFORM_TOP;
-
-        RenderBuffer[local_y * RENDER_STRIP_WIDTH + x] =
-            UI_WAVEFORM_COLOR;
-      }
-    }
-
-    // Transmit only the clipped region
-    ST7796_DrawRGB565Buffer(
-      start_x,
-      WAVEFORM_TOP,
-      RENDER_STRIP_WIDTH,
-      CLIPPED_HEIGHT,
-      RenderBuffer
-    );
-  }
-}
-
-static void RetroScope_DrawSegmentInBuffer(
-  uint16_t local_x,
-  uint16_t y0,
-  uint16_t y1,
-  uint16_t strip_top,
-  uint16_t strip_height
-) {
-  uint16_t min_y = (y0 < y1) ? y0 : y1;
-  uint16_t max_y = (y0 > y1) ? y0 : y1;
-
-  for (uint16_t y = min_y; y <= max_y; y++) {
-
-    if (y >= strip_top &&
-        y < strip_top + strip_height) {
-
-      uint16_t local_y = y - strip_top;
-
-      RenderBuffer[
-        local_y * RENDER_STRIP_WIDTH + local_x
-      ] = UI_WAVEFORM_COLOR;
-    }
-  }
-}
-
-static void RetroScope_GetStripBounds(
-  uint16_t start_x,
-  uint16_t* top,
-  uint16_t* bottom
-) {
+static void RetroScope_GetStripBounds(uint16_t start_x, uint16_t *top,
+                                      uint16_t *bottom) {
   uint16_t first = start_x - GRID_X;
 
   uint16_t min_y = Waveform[first];
   uint16_t max_y = Waveform[first];
 
   for (uint16_t i = 0; i <= RENDER_STRIP_WIDTH; i++) {
-
     uint16_t index = first + i;
     uint16_t current_y = Waveform[index];
 
@@ -397,84 +144,10 @@ static void RetroScope_GetStripBounds(
 
   *top = (min_y > GRID_Y) ? min_y - 1U : GRID_Y;
 
-  *bottom = (max_y < grid_bottom)
-      ? max_y + 1U
-      : grid_bottom;
-}
-
-void RetroScope_DrawWaveformAdaptive(void) {
-
-  for (uint16_t start_x = GRID_X;
-       start_x < GRID_X + GRID_WIDTH;
-       start_x += RENDER_STRIP_WIDTH) {
-
-    uint16_t strip_top;
-    uint16_t strip_bottom;
-
-    RetroScope_GetStripBounds(
-      start_x,
-      &strip_top,
-      &strip_bottom
-    );
-
-    uint16_t strip_height =
-        strip_bottom - strip_top + 1U;
-
-    // Prepare background and grid.
-    for (uint16_t y = 0; y < strip_height; y++) {
-
-      uint16_t screen_y = strip_top + y;
-
-      for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-        uint16_t screen_x = start_x + x;
-        uint16_t color = UI_WAVE_COLOR;
-
-        if ((screen_x - GRID_X) % GRID_SPACING == 0U ||
-            (screen_y - GRID_Y) % GRID_SPACING == 0U) {
-          color = GRID_COLOR;
-        }
-
-        if (screen_x == GRID_X + GRID_WIDTH / 2U ||
-            screen_y == GRID_Y + GRID_HEIGHT / 2U) {
-          color = GRID_AXIS_COLOR;
-        }
-
-        RenderBuffer[
-          y * RENDER_STRIP_WIDTH + x
-        ] = color;
-      }
-    }
-
-    // Draw connected waveform segments.
-    uint16_t first_sample = start_x - GRID_X;
-
-    for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-
-      uint16_t sample_index = first_sample + x;
-
-      RetroScope_DrawSegmentInBuffer(
-        x,
-        Waveform[sample_index],
-        Waveform[sample_index + 1U],
-        strip_top,
-        strip_height
-      );
-    }
-
-    // Send only this strip's active region.
-    ST7796_DrawRGB565Buffer(
-      start_x,
-      strip_top,
-      RENDER_STRIP_WIDTH,
-      strip_height,
-      RenderBuffer
-    );
-  }
+  *bottom = (max_y < grid_bottom) ? max_y + 1U : grid_bottom;
 }
 
 static uint8_t RetroScope_StripChanged(uint16_t start_x) {
-
   if (!PreviousWaveformValid) {
     return 1U;
   }
@@ -483,7 +156,6 @@ static uint8_t RetroScope_StripChanged(uint16_t start_x) {
 
   // Compare all 21 samples belonging to this strip.
   for (uint16_t i = 0; i <= RENDER_STRIP_WIDTH; i++) {
-
     uint16_t index = first + i;
 
     if (Waveform[index] != PreviousWaveform[index]) {
@@ -495,20 +167,19 @@ static uint8_t RetroScope_StripChanged(uint16_t start_x) {
 }
 
 void RetroScope_DrawWaveformFrame(void) {
-	StripsDrawn = 0U;
+  StripsDrawn = 0U;
 
-	for (uint16_t start_x = GRID_X; start_x < GRID_X + GRID_WIDTH;
-	     start_x += RENDER_STRIP_WIDTH) {
+  for (uint16_t start_x = GRID_X; start_x < GRID_X + GRID_WIDTH;
+       start_x += RENDER_STRIP_WIDTH) {
+    // Skip strips whose waveform samples have not changed.
+    if (!RetroScope_StripChanged(start_x)) {
+      continue;
+    }
 
-	  // Skip strips whose waveform samples have not changed.
-	  if (!RetroScope_StripChanged(start_x)) {
-	    continue;
-	  }
+    StripsDrawn++;
 
-	  StripsDrawn++;
-
-	  uint16_t strip_top;
-	  uint16_t strip_bottom;
+    uint16_t strip_top;
+    uint16_t strip_bottom;
 
     RetroScope_GetStripBounds(start_x, &strip_top, &strip_bottom);
 
@@ -595,14 +266,12 @@ void RetroScope_DrawWaveformFrame(void) {
   PreviousWaveformValid = 1U;
 }
 
-void RetroScope_LoadADCWaveform(const uint16_t *samples) {
-
+void RetroScope_LoadAdcWaveform(const uint16_t *samples) {
   if (samples == NULL) {
     return;
   }
 
   for (uint16_t i = 0U; i < WAVEFORM_SAMPLES; i++) {
-
     uint16_t adc = samples[i];
 
     if (adc > 4095U) {
@@ -610,11 +279,9 @@ void RetroScope_LoadADCWaveform(const uint16_t *samples) {
     }
 
     // Map 0–4095 to the vertical graticule.
-    uint32_t scaled =
-        ((uint32_t)adc * (GRID_HEIGHT - 1U)) / 4095U;
+    uint32_t scaled = ((uint32_t)adc * (GRID_HEIGHT - 1U)) / 4095U;
 
     // Screen Y increases downward.
-    Waveform[i] =
-        GRID_Y + GRID_HEIGHT - 1U - (uint16_t)scaled;
+    Waveform[i] = GRID_Y + GRID_HEIGHT - 1U - (uint16_t)scaled;
   }
 }
