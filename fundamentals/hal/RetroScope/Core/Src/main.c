@@ -75,6 +75,7 @@ uint16_t AdcCaptureBuffer[ADC_SAMPLES_PER_HALF];
 // 0: ISR may write. 1: main owns the capture until processing finishes.
 volatile uint32_t AdcCaptureReady = 0U;
 volatile uint32_t AdcDroppedCaptureCount = 0U;
+volatile uint32_t AdcUnsafeCaptureCount = 0U;
 
 volatile float ActualSampleRate = 0.0f;
 
@@ -102,7 +103,7 @@ volatile uint32_t MaxAdcCaptureCopyCycles = 0U;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-static void RetroScope_ProcessAdcCapture(const uint16_t *Samples);
+static void RetroScope_ProcessAdcCapture(const uint16_t* Samples);
 
 /* USER CODE END PFP */
 
@@ -202,7 +203,7 @@ int main(void) {
 
   RetroScope_EnableCycleCounter();
 
-  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)AdcBuffer, ADC_BUFFER_SIZE) !=
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcBuffer, ADC_BUFFER_SIZE) !=
       HAL_OK) {
     Error_Handler();
   }
@@ -341,9 +342,24 @@ void SystemClock_Config(void) {
 
 // ISR only: copy before DMA returns to this half (nominally 80.2 ms).
 // The occupied-buffer counter does not detect a late DMA interrupt.
-static void RetroScope_PublishAdcCapture(const volatile uint16_t *Samples) {
+static void RetroScope_PublishAdcCapture(const volatile uint16_t* Samples) {
   if (AdcCaptureReady != 0U) {
     AdcDroppedCaptureCount++;
+    return;
+  }
+
+  uint32_t Remaining = __HAL_DMA_GET_COUNTER(hadc1.DMA_Handle);
+  uint8_t SourceSafe = 0U;
+
+  if (Samples == &AdcBuffer[0U]) {
+    SourceSafe = (Remaining > 0U && Remaining <= ADC_SAMPLES_PER_HALF);
+  } else if (Samples == &AdcBuffer[ADC_SAMPLES_PER_HALF]) {
+    SourceSafe =
+        (Remaining > ADC_SAMPLES_PER_HALF && Remaining <= ADC_BUFFER_SIZE);
+  }
+
+  if (SourceSafe == 0U) {
+    AdcUnsafeCaptureCount++;
     return;
   }
 
@@ -356,7 +372,28 @@ static void RetroScope_PublishAdcCapture(const volatile uint16_t *Samples) {
   }
 
   __DMB();
-  // Publish only after the complete buffer is visible.
+
+  uint32_t RemainingAfter = __HAL_DMA_GET_COUNTER(hadc1.DMA_Handle);
+  uint32_t BoundaryFlag;
+
+  if (Samples == &AdcBuffer[0U]) {
+    SourceSafe =
+        (RemainingAfter > 0U && RemainingAfter <= ADC_SAMPLES_PER_HALF);
+    BoundaryFlag = DMA_FLAG_TCIF0_4;
+  } else {
+    SourceSafe = (RemainingAfter > ADC_SAMPLES_PER_HALF &&
+                  RemainingAfter <= ADC_BUFFER_SIZE);
+    BoundaryFlag = DMA_FLAG_HTIF0_4;
+  }
+
+  if (SourceSafe == 0U ||
+      __HAL_DMA_GET_FLAG(hadc1.DMA_Handle, BoundaryFlag) != RESET) {
+    AdcUnsafeCaptureCount++;
+    return;
+  }
+
+  __DMB();
+  // Publish only after the copy passes validation.
   AdcCaptureReady = 1U;
 
   uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
@@ -368,7 +405,7 @@ static void RetroScope_PublishAdcCapture(const volatile uint16_t *Samples) {
   }
 }
 
-static void RetroScope_ProcessAdcCapture(const uint16_t *Samples) {
+static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   uint32_t StartCycles = DWT->CYCCNT;
   uint16_t triggerIndex = 0U;
   uint8_t triggerFound = 0U;
@@ -407,14 +444,14 @@ static void RetroScope_ProcessAdcCapture(const uint16_t *Samples) {
   }
 }
 
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc->Instance == ADC1) {
     RetroScope_PublishAdcCapture(&AdcBuffer[0U]);
     AdcHalfCompleteCount++;
   }
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc->Instance == ADC1) {
     RetroScope_PublishAdcCapture(&AdcBuffer[ADC_SAMPLES_PER_HALF]);
     AdcBufferCompleteCount++;
@@ -443,7 +480,7 @@ void Error_Handler(void) {
  * @param  line: assert_param error line source number
  * @retval None
  */
-void assert_failed(uint8_t *file, uint32_t line) {
+void assert_failed(uint8_t* file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
