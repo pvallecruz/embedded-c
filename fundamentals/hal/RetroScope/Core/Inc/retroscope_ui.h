@@ -18,7 +18,9 @@ extern volatile uint16_t StripsDrawn;
 void RetroScope_DrawLayout(void);
 void RetroScope_DrawGrid(void);
 void RetroScope_DrawLabels(void);
-void RetroScope_DrawWaveformFrame(void);
-void RetroScope_LoadAdcWaveform(const uint16_t *samples);
+void RetroScope_LoadAdcWaveform(const uint16_t* samples);
+uint8_t RetroScope_IsFrameActive(void);
+void RetroScope_BeginFrame(void);
+void RetroScope_RenderStep(void);
 
 #endif /* INC_RETROSCOPE_UI_H_ */

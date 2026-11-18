@@ -18,12 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
 #include "adc.h"
 #include "dma.h"
-#include "gpio.h"
 #include "spi.h"
 #include "tim.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -46,6 +45,8 @@
 #define ADC_BUFFER_SIZE (ADC_SAMPLES_PER_HALF * 2U)
 #define ADC_DISPLAY_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 #define ADC_TRIGGER_LEVEL 2048U
+// Nominal sampling rate for the current fixed TIM2 configuration.
+#define ADC_SAMPLE_RATE_HZ 10000U
 
 /* USER CODE END PD */
 
@@ -59,6 +60,7 @@
 /* USER CODE BEGIN PV */
 
 static uint32_t LastFrameTick = 0U;
+static uint32_t FrameStartCycles = 0U;
 volatile uint32_t FrameCycles = 0U;
 volatile float FrameTimeMs = 0.0f;
 
@@ -96,6 +98,9 @@ volatile uint32_t MaxAdcProcessingCycles = 0U;
 // Successful DMA-half copy and publication time; excludes skipped captures.
 volatile uint32_t AdcCaptureCopyCycles = 0U;
 volatile uint32_t MaxAdcCaptureCopyCycles = 0U;
+volatile float AdcFrequencyHz = 0.0f;
+volatile uint32_t AdcFrequencyValid = 0U;
+volatile uint32_t AdcFrequencyPeriodCount = 0U;
 
 /* USER CODE END PV */
 
@@ -109,6 +114,41 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void RetroScope_MeasureFrequency(const uint16_t* Samples) {
+  uint16_t FirstEdge = 0U;
+  uint16_t LastEdge = 0U;
+  uint16_t EdgeCount = 0U;
+
+  AdcFrequencyValid = 0U;
+  AdcFrequencyHz = 0.0f;
+  AdcFrequencyPeriodCount = 0U;
+
+  for (uint16_t i = 1U; i < ADC_SAMPLES_PER_HALF; i++) {
+    if (Samples[i - 1U] < ADC_TRIGGER_LEVEL &&
+        Samples[i] >= ADC_TRIGGER_LEVEL) {
+      if (EdgeCount == 0U) {
+        FirstEdge = i;
+      }
+
+      LastEdge = i;
+      EdgeCount++;
+    }
+  }
+
+  if (EdgeCount < 2U) {
+    return;
+  }
+
+  uint32_t PeriodCount = EdgeCount - 1U;
+  uint32_t SampleSpan = LastEdge - FirstEdge;
+
+  AdcFrequencyHz =
+      ((float)ADC_SAMPLE_RATE_HZ * (float)PeriodCount) / (float)SampleSpan;
+
+  AdcFrequencyPeriodCount = PeriodCount;
+  AdcFrequencyValid = 1U;
+}
 
 static void RetroScope_EnableCycleCounter(void) {
   // Enable trace functionality
@@ -161,18 +201,19 @@ static void RetroScope_MeasureAdcRange(void) {
 /* USER CODE END 0 */
 
 /**
- * @brief  The application entry point.
- * @retval int
- */
-int main(void) {
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
-   */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -230,6 +271,7 @@ int main(void) {
       __DMB();
 
       RetroScope_ProcessAdcCapture(AdcCaptureBuffer);
+      RetroScope_MeasureFrequency(AdcCaptureBuffer);
 
       __DMB();
       // Release only after all reads of the capture have completed.
@@ -238,44 +280,48 @@ int main(void) {
 
     uint32_t CurrentTick = HAL_GetTick();
 
-    if ((uint32_t)(CurrentTick - LastFrameTick) >= FRAME_INTERVAL_MS) {
-      if (PreviousFrameStart != 0U) {
-        uint32_t elapsed = CurrentTick - PreviousFrameStart;
-
-        if (elapsed > 0U) {
-          ActualFPS = 1000.0f / (float)elapsed;
-        }
-      }
-
-      PreviousFrameStart = CurrentTick;
-      LastFrameTick = CurrentTick;
-
-      SpiTransferCycles = 0U;
-
-      uint32_t StartCycles = DWT->CYCCNT;
-
-      // Draw the latest processed ADC snapshot.
+    if (RetroScope_IsFrameActive() == 0U &&
+        (uint32_t)(CurrentTick - LastFrameTick) >= FRAME_INTERVAL_MS) {
       if (RetroScope_GetAdcSnapshot()) {
+        if (PreviousFrameStart != 0U) {
+          uint32_t Elapsed = CurrentTick - PreviousFrameStart;
+
+          if (Elapsed > 0U) {
+            ActualFPS = 1000.0f / (float)Elapsed;
+          }
+        }
+
+        PreviousFrameStart = CurrentTick;
+        LastFrameTick = CurrentTick;
+
+        SpiTransferCycles = 0U;
+        FrameStartCycles = DWT->CYCCNT;
+
         RetroScope_MeasureAdcRange();
-
         RetroScope_LoadAdcWaveform(AdcDisplayBuffer);
-        RetroScope_DrawWaveformFrame();
+        RetroScope_BeginFrame();
       }
+    }
 
-      FrameCycles = DWT->CYCCNT - StartCycles;
+    if (RetroScope_IsFrameActive() != 0U) {
+      RetroScope_RenderStep();
 
-      FrameTimeMs = (float)FrameCycles * 1000.0f / (float)HAL_RCC_GetHCLKFreq();
+      if (RetroScope_IsFrameActive() == 0U) {
+        FrameCycles = DWT->CYCCNT - FrameStartCycles;
+        FrameTimeMs =
+            (float)FrameCycles * 1000.0f / (float)HAL_RCC_GetHCLKFreq();
 
-      if (FrameTimeMs > MaxFrameTimeMs) {
-        MaxFrameTimeMs = FrameTimeMs;
+        if (FrameTimeMs > MaxFrameTimeMs) {
+          MaxFrameTimeMs = FrameTimeMs;
+        }
+
+        if (FrameTimeMs < MinFrameTimeMs) {
+          MinFrameTimeMs = FrameTimeMs;
+        }
+
+        SpiTransferMs =
+            (float)SpiTransferCycles * 1000.0f / (float)HAL_RCC_GetHCLKFreq();
       }
-
-      if (FrameTimeMs < MinFrameTimeMs) {
-        MinFrameTimeMs = FrameTimeMs;
-      }
-
-      SpiTransferMs =
-          (float)SpiTransferCycles * 1000.0f / (float)HAL_RCC_GetHCLKFreq();
     }
 
     uint32_t SampleRateTick = HAL_GetTick();
@@ -296,21 +342,22 @@ int main(void) {
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
-void SystemClock_Config(void) {
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-   */
+  */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
   /** Initializes the RCC Oscillators according to the specified parameters
-   * in the RCC_OscInitTypeDef structure.
-   */
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -320,20 +367,22 @@ void SystemClock_Config(void) {
   RCC_OscInitStruct.PLL.PLLN = 192;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
     Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
-                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK) {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+  {
     Error_Handler();
   }
 }
@@ -461,10 +510,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 /* USER CODE END 4 */
 
 /**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
-void Error_Handler(void) {
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
@@ -474,13 +524,14 @@ void Error_Handler(void) {
 }
 #ifdef USE_FULL_ASSERT
 /**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
-void assert_failed(uint8_t* file, uint32_t line) {
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,

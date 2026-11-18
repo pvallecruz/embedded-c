@@ -4,9 +4,10 @@
  *  Created on: Nov 15, 2026
  *      Author: pedrol.valle-cruz
  */
+#include "retroscope_ui.h"
+
 #include <stdint.h>
 
-#include "retroscope_ui.h"
 #include "st7796.h"
 
 // Screen regions
@@ -47,6 +48,8 @@ static uint16_t Waveform[WAVEFORM_SAMPLES];
 static uint16_t RenderBuffer[RENDER_BUFFER_SIZE];
 static uint16_t PreviousWaveform[WAVEFORM_SAMPLES];
 static uint8_t PreviousWaveformValid = 0U;
+static uint16_t NextStripX = GRID_X;
+static uint8_t FrameActive = 0U;
 
 volatile uint16_t StripsDrawn = 0U;
 
@@ -110,8 +113,8 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(250, 273, "TIME/DIV", ST7796_WHITE, 2);
 }
 
-static void RetroScope_GetStripBounds(uint16_t start_x, uint16_t *top,
-                                      uint16_t *bottom) {
+static void RetroScope_GetStripBounds(uint16_t start_x, uint16_t* top,
+                                      uint16_t* bottom) {
   uint16_t first = start_x - GRID_X;
 
   uint16_t min_y = Waveform[first];
@@ -166,107 +169,124 @@ static uint8_t RetroScope_StripChanged(uint16_t start_x) {
   return 0U;
 }
 
-void RetroScope_DrawWaveformFrame(void) {
-  StripsDrawn = 0U;
+static void RetroScope_DrawWaveformStrip(uint16_t start_x) {
+  uint16_t strip_top;
+  uint16_t strip_bottom;
 
-  for (uint16_t start_x = GRID_X; start_x < GRID_X + GRID_WIDTH;
-       start_x += RENDER_STRIP_WIDTH) {
-    // Skip strips whose waveform samples have not changed.
-    if (!RetroScope_StripChanged(start_x)) {
-      continue;
-    }
+  RetroScope_GetStripBounds(start_x, &strip_top, &strip_bottom);
 
-    StripsDrawn++;
+  uint16_t strip_height = strip_bottom - strip_top + 1U;
 
-    uint16_t strip_top;
-    uint16_t strip_bottom;
+  uint16_t strip_width = RENDER_STRIP_WIDTH;
 
-    RetroScope_GetStripBounds(start_x, &strip_top, &strip_bottom);
-
-    uint16_t strip_height = strip_bottom - strip_top + 1U;
-
-    uint16_t strip_width = RENDER_STRIP_WIDTH;
-
-    // Final strip includes the rightmost endpoint.
-    if (start_x + strip_width == GRID_X + GRID_WIDTH) {
-      strip_width++;
-    }
-
-    // Prepare background and grid.
-    for (uint16_t y = 0; y < strip_height; y++) {
-      uint16_t screen_y = strip_top + y;
-
-      for (uint16_t x = 0; x < strip_width; x++) {
-        uint16_t screen_x = start_x + x;
-        uint16_t color = UI_WAVE_COLOR;
-
-        if ((screen_x - GRID_X) % GRID_SPACING == 0U ||
-            (screen_y - GRID_Y) % GRID_SPACING == 0U) {
-          color = GRID_COLOR;
-        }
-
-        if (screen_x == GRID_X + GRID_WIDTH / 2U ||
-            screen_y == GRID_Y + GRID_HEIGHT / 2U) {
-          color = GRID_AXIS_COLOR;
-        }
-
-        RenderBuffer[y * RENDER_BUFFER_WIDTH + x] = color;
-      }
-    }
-
-    // Draw the current waveform.
-    uint16_t first_sample = start_x - GRID_X;
-
-    for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
-      uint16_t index = first_sample + x;
-
-      uint16_t y0 = Waveform[index];
-      uint16_t y1 = Waveform[index + 1U];
-
-      uint16_t min_y = (y0 < y1) ? y0 : y1;
-      uint16_t max_y = (y0 > y1) ? y0 : y1;
-
-      for (uint16_t y = min_y; y <= max_y; y++) {
-        if (y >= strip_top && y <= strip_bottom) {
-          uint16_t local_y = y - strip_top;
-
-          RenderBuffer[local_y * RENDER_BUFFER_WIDTH + x] = UI_WAVEFORM_COLOR;
-        }
-      }
-    }
-
-    // Draw the last endpoint in the final strip.
-    if (strip_width > RENDER_STRIP_WIDTH) {
-      uint16_t final_y = Waveform[WAVEFORM_SAMPLES - 1U];
-
-      if (final_y >= strip_top && final_y <= strip_bottom) {
-        RenderBuffer[(final_y - strip_top) * RENDER_BUFFER_WIDTH +
-                     RENDER_STRIP_WIDTH] = UI_WAVEFORM_COLOR;
-      }
-    }
-
-    // Our buffer uses a 21-pixel row stride.
-    // Pack active rows to match the LCD transfer width.
-    for (uint16_t y = 1; y < strip_height; y++) {
-      for (uint16_t x = 0; x < strip_width; x++) {
-        RenderBuffer[y * strip_width + x] =
-            RenderBuffer[y * RENDER_BUFFER_WIDTH + x];
-      }
-    }
-
-    ST7796_DrawRGB565Buffer(start_x, strip_top, strip_width, strip_height,
-                            RenderBuffer);
+  // Final strip includes the rightmost endpoint.
+  if (start_x + strip_width == GRID_X + GRID_WIDTH) {
+    strip_width++;
   }
 
-  // Save the waveform for the next frame.
-  for (uint16_t i = 0; i < WAVEFORM_SAMPLES; i++) {
-    PreviousWaveform[i] = Waveform[i];
+  // Prepare background and grid.
+  for (uint16_t y = 0; y < strip_height; y++) {
+    uint16_t screen_y = strip_top + y;
+
+    for (uint16_t x = 0; x < strip_width; x++) {
+      uint16_t screen_x = start_x + x;
+      uint16_t color = UI_WAVE_COLOR;
+
+      if ((screen_x - GRID_X) % GRID_SPACING == 0U ||
+          (screen_y - GRID_Y) % GRID_SPACING == 0U) {
+        color = GRID_COLOR;
+      }
+
+      if (screen_x == GRID_X + GRID_WIDTH / 2U ||
+          screen_y == GRID_Y + GRID_HEIGHT / 2U) {
+        color = GRID_AXIS_COLOR;
+      }
+
+      RenderBuffer[y * RENDER_BUFFER_WIDTH + x] = color;
+    }
   }
 
-  PreviousWaveformValid = 1U;
+  // Draw the current waveform.
+  uint16_t first_sample = start_x - GRID_X;
+
+  for (uint16_t x = 0; x < RENDER_STRIP_WIDTH; x++) {
+    uint16_t index = first_sample + x;
+
+    uint16_t y0 = Waveform[index];
+    uint16_t y1 = Waveform[index + 1U];
+
+    uint16_t min_y = (y0 < y1) ? y0 : y1;
+    uint16_t max_y = (y0 > y1) ? y0 : y1;
+
+    for (uint16_t y = min_y; y <= max_y; y++) {
+      if (y >= strip_top && y <= strip_bottom) {
+        uint16_t local_y = y - strip_top;
+
+        RenderBuffer[local_y * RENDER_BUFFER_WIDTH + x] = UI_WAVEFORM_COLOR;
+      }
+    }
+  }
+
+  // Draw the last endpoint in the final strip.
+  if (strip_width > RENDER_STRIP_WIDTH) {
+    uint16_t final_y = Waveform[WAVEFORM_SAMPLES - 1U];
+
+    if (final_y >= strip_top && final_y <= strip_bottom) {
+      RenderBuffer[(final_y - strip_top) * RENDER_BUFFER_WIDTH +
+                   RENDER_STRIP_WIDTH] = UI_WAVEFORM_COLOR;
+    }
+  }
+
+  // Our buffer uses a 21-pixel row stride.
+  // Pack active rows to match the LCD transfer width.
+  for (uint16_t y = 1; y < strip_height; y++) {
+    for (uint16_t x = 0; x < strip_width; x++) {
+      RenderBuffer[y * strip_width + x] =
+          RenderBuffer[y * RENDER_BUFFER_WIDTH + x];
+    }
+  }
+
+  ST7796_DrawRGB565Buffer(start_x, strip_top, strip_width, strip_height,
+                          RenderBuffer);
 }
 
-void RetroScope_LoadAdcWaveform(const uint16_t *samples) {
+uint8_t RetroScope_IsFrameActive(void) {
+  return FrameActive;
+}
+
+void RetroScope_BeginFrame(void) {
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  NextStripX = GRID_X;
+  StripsDrawn = 0U;
+  FrameActive = 1U;
+}
+
+void RetroScope_RenderStep(void) {
+  if (FrameActive == 0U) {
+    return;
+  }
+
+  if (RetroScope_StripChanged(NextStripX)) {
+    RetroScope_DrawWaveformStrip(NextStripX);
+    StripsDrawn++;
+  }
+
+  NextStripX += RENDER_STRIP_WIDTH;
+
+  if (NextStripX >= GRID_X + GRID_WIDTH) {
+    for (uint16_t i = 0U; i < WAVEFORM_SAMPLES; i++) {
+      PreviousWaveform[i] = Waveform[i];
+    }
+
+    PreviousWaveformValid = 1U;
+    FrameActive = 0U;
+  }
+}
+
+void RetroScope_LoadAdcWaveform(const uint16_t* samples) {
   if (samples == NULL) {
     return;
   }
