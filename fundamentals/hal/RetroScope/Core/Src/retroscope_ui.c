@@ -4,11 +4,12 @@
  *  Created on: Nov 15, 2026
  *      Author: pedrol.valle-cruz
  */
-#include "retroscope_ui.h"
 
+#include <stdio.h>
 #include <stdint.h>
 
 #include "st7796.h"
+#include "retroscope_ui.h"
 
 // Screen regions
 #define HEADER_HEIGHT 34U
@@ -111,6 +112,40 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(110, 273, "V/DIV", ST7796_WHITE, 2);
 
   ST7796_DrawString(250, 273, "TIME/DIV", ST7796_WHITE, 2);
+
+  // Frequency remains unavailable until a valid measurement arrives.
+  ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
+}
+
+void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
+  static uint32_t PreviousHz = 0U;
+  static uint8_t PreviousValid = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  Valid = (Valid != 0U);
+
+  if (DisplayInitialized != 0U &&
+      Valid == PreviousValid &&
+      (Valid == 0U || FrequencyHz == PreviousHz)) {
+    return;
+  }
+
+  char Text[16];
+
+  if (Valid != 0U) {
+    snprintf(Text, sizeof(Text), "%lu HZ",
+             (unsigned long)FrequencyHz);
+  } else {
+    snprintf(Text, sizeof(Text), "-- HZ");
+  }
+
+  // Preserve "FREQ: " and replace only the value and units.
+  ST7796_FillRect(87, 298, 160, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(87, 298, Text, ST7796_CYAN, 2);
+
+  PreviousHz = FrequencyHz;
+  PreviousValid = Valid;
+  DisplayInitialized = 1U;
 }
 
 static void RetroScope_GetStripBounds(uint16_t start_x, uint16_t* top,
@@ -250,9 +285,7 @@ static void RetroScope_DrawWaveformStrip(uint16_t start_x) {
                           RenderBuffer);
 }
 
-uint8_t RetroScope_IsFrameActive(void) {
-  return FrameActive;
-}
+uint8_t RetroScope_IsFrameActive(void) { return FrameActive; }
 
 void RetroScope_BeginFrame(void) {
   if (FrameActive != 0U) {
