@@ -110,9 +110,9 @@ void RetroScope_DrawLabels(void) {
   // Bottom information panel
   ST7796_DrawString(15, 273, "CH1", ST7796_GREEN, 2);
 
-  ST7796_DrawString(110, 273, "V/DIV", ST7796_WHITE, 2);
-
-  ST7796_DrawString(250, 273, "TIME/DIV", ST7796_WHITE, 2);
+  // Fixed scales for the current ADC mapping and sampling configuration.
+  ST7796_DrawString(110, 273, "0.66 V/DIV", ST7796_WHITE, 2);
+  ST7796_DrawString(250, 273, "4.00 MS/DIV", ST7796_WHITE, 2);
 
   // Frequency remains unavailable until a valid measurement arrives.
   ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
@@ -157,8 +157,7 @@ void RetroScope_UpdateVpp(uint32_t Centivolts, uint8_t Valid) {
   // Limit formatting to values that fit the display field.
   Valid = (Valid != 0U && Centivolts <= 999U);
 
-  if (DisplayInitialized != 0U &&
-      Valid == PreviousValid &&
+  if (DisplayInitialized != 0U && Valid == PreviousValid &&
       (Valid == 0U || Centivolts == PreviousCentivolts)) {
     return;
   }
