@@ -112,6 +112,8 @@ static uint32_t LastFrequencyDisplayTick = 0U;
 volatile float AdcMinVolts = 0.0f;
 volatile float AdcMaxVolts = 0.0f;
 volatile float AdcPeakToPeakVolts = 0.0f;
+// Requested horizontal scale, in microseconds per division.
+volatile uint32_t RequestedTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
 
 /* USER CODE END PV */
 
@@ -318,8 +320,15 @@ int main(void) {
         SpiTransferCycles = 0U;
         FrameStartCycles = DWT->CYCCNT;
 
+        uint32_t TimebaseUs = RequestedTimebaseUs;
+
+        if (TimebaseUs != RETROSCOPE_TIMEBASE_2_MS) {
+          TimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
+        }
+
         RetroScope_MeasureAdcRange();
-        RetroScope_LoadAdcWaveform(AdcDisplayBuffer);
+        RetroScope_LoadAdcWaveform(AdcDisplayBuffer, TimebaseUs);
+        RetroScope_UpdateTimebase(TimebaseUs);
         RetroScope_BeginFrame();
       }
     }

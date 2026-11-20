@@ -120,6 +120,33 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
 }
 
+void RetroScope_UpdateTimebase(uint32_t TimebaseUs) {
+  static uint32_t PreviousTimebaseUs = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  // Unsupported settings fall back to the existing 4 ms/div scale.
+  if (TimebaseUs != RETROSCOPE_TIMEBASE_2_MS) {
+    TimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
+  }
+
+  if (TimebaseUs == PreviousTimebaseUs) {
+    return;
+  }
+
+  const char *Text =
+      (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS)
+          ? "2.00 MS/DIV"
+          : "4.00 MS/DIV";
+
+  ST7796_FillRect(250, 273, 132, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(250, 273, Text, ST7796_WHITE, 2);
+
+  PreviousTimebaseUs = TimebaseUs;
+}
+
 void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
   static uint32_t PreviousHz = 0U;
   static uint8_t PreviousValid = 0U;
@@ -352,13 +379,15 @@ void RetroScope_RenderStep(void) {
   }
 }
 
-void RetroScope_LoadAdcWaveform(const uint16_t* samples) {
-  if (samples == NULL) {
+void RetroScope_LoadAdcWaveform(const uint16_t* samples, uint32_t TimebaseUs) {
+  if (samples == NULL || FrameActive != 0U) {
     return;
   }
 
+  uint16_t SampleDivisor = (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? 2U : 1U;
+
   for (uint16_t i = 0U; i < WAVEFORM_SAMPLES; i++) {
-    uint16_t adc = samples[i];
+    uint16_t adc = samples[i / SampleDivisor];
 
     if (adc > 4095U) {
       adc = 4095U;
