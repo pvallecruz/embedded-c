@@ -23,5 +23,6 @@ void RetroScope_LoadAdcWaveform(const uint16_t* samples);
 uint8_t RetroScope_IsFrameActive(void);
 void RetroScope_BeginFrame(void);
 void RetroScope_RenderStep(void);
+void RetroScope_UpdateVpp(uint32_t Centivolts, uint8_t Valid);
 
 #endif /* INC_RETROSCOPE_UI_H_ */

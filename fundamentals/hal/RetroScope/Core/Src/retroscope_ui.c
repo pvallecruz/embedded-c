@@ -5,11 +5,12 @@
  *      Author: pedrol.valle-cruz
  */
 
-#include <stdio.h>
+#include "retroscope_ui.h"
+
 #include <stdint.h>
+#include <stdio.h>
 
 #include "st7796.h"
-#include "retroscope_ui.h"
 
 // Screen regions
 #define HEADER_HEIGHT 34U
@@ -115,6 +116,8 @@ void RetroScope_DrawLabels(void) {
 
   // Frequency remains unavailable until a valid measurement arrives.
   ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
+  // Estimated peak-to-peak voltage; unavailable before the first capture.
+  ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
 }
 
 void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
@@ -124,8 +127,7 @@ void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
 
   Valid = (Valid != 0U);
 
-  if (DisplayInitialized != 0U &&
-      Valid == PreviousValid &&
+  if (DisplayInitialized != 0U && Valid == PreviousValid &&
       (Valid == 0U || FrequencyHz == PreviousHz)) {
     return;
   }
@@ -133,8 +135,7 @@ void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
   char Text[16];
 
   if (Valid != 0U) {
-    snprintf(Text, sizeof(Text), "%lu HZ",
-             (unsigned long)FrequencyHz);
+    snprintf(Text, sizeof(Text), "%lu HZ", (unsigned long)FrequencyHz);
   } else {
     snprintf(Text, sizeof(Text), "-- HZ");
   }
@@ -144,6 +145,39 @@ void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
   ST7796_DrawString(87, 298, Text, ST7796_CYAN, 2);
 
   PreviousHz = FrequencyHz;
+  PreviousValid = Valid;
+  DisplayInitialized = 1U;
+}
+
+void RetroScope_UpdateVpp(uint32_t Centivolts, uint8_t Valid) {
+  static uint32_t PreviousCentivolts = 0U;
+  static uint8_t PreviousValid = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  // Limit formatting to values that fit the display field.
+  Valid = (Valid != 0U && Centivolts <= 999U);
+
+  if (DisplayInitialized != 0U &&
+      Valid == PreviousValid &&
+      (Valid == 0U || Centivolts == PreviousCentivolts)) {
+    return;
+  }
+
+  char Text[12];
+
+  if (Valid != 0U) {
+    snprintf(Text, sizeof(Text), "%lu.%02lu V",
+             (unsigned long)(Centivolts / 100U),
+             (unsigned long)(Centivolts % 100U));
+  } else {
+    snprintf(Text, sizeof(Text), "-- V");
+  }
+
+  // Preserve "VPP: " and replace only the value and units.
+  ST7796_FillRect(320, 298, 96, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(320, 298, Text, ST7796_CYAN, 2);
+
+  PreviousCentivolts = Centivolts;
   PreviousValid = Valid;
   DisplayInitialized = 1U;
 }

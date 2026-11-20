@@ -360,6 +360,19 @@ int main(void) {
       }
 
       RetroScope_UpdateFrequency(RoundedHz, Valid);
+      float PeakToPeakVolts = AdcPeakToPeakVolts;
+      uint8_t VppValid =
+          (DisplaySnapshotCount != 0U &&
+           PeakToPeakVolts >= 0.0f &&
+           PeakToPeakVolts <= ADC_REFERENCE_VOLTS);
+
+      uint32_t Centivolts = 0U;
+
+      if (VppValid != 0U) {
+        Centivolts = (uint32_t)(PeakToPeakVolts * 100.0f + 0.5f);
+      }
+
+      RetroScope_UpdateVpp(Centivolts, VppValid);
       LastFrequencyDisplayTick = FrequencyDisplayTick;
     }
 
