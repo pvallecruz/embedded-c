@@ -46,6 +46,9 @@
 #define ADC_BUFFER_SIZE (ADC_SAMPLES_PER_HALF * 2U)
 #define ADC_DISPLAY_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 #define ADC_TRIGGER_LEVEL 2048U
+#define ADC_TRIGGER_HYSTERESIS 64U
+#define ADC_TRIGGER_LOW_LEVEL (ADC_TRIGGER_LEVEL - ADC_TRIGGER_HYSTERESIS)
+#define ADC_TRIGGER_HIGH_LEVEL (ADC_TRIGGER_LEVEL + ADC_TRIGGER_HYSTERESIS)
 // Nominal sampling rate for the current fixed TIM2 configuration.
 #define ADC_SAMPLE_RATE_HZ 10000U
 // Frequency detection thresholds in raw ADC counts.
@@ -525,13 +528,16 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   uint32_t StartCycles = DWT->CYCCNT;
   uint16_t triggerIndex = 0U;
   uint8_t triggerFound = 0U;
+  uint8_t TriggerArmed = 0U;
 
-  // Find a rising edge with enough samples remaining.
-  for (uint16_t i = 1U; i <= ADC_SAMPLES_PER_HALF - ADC_DISPLAY_SAMPLES; i++) {
-    uint16_t previous = Samples[i - 1U];
-    uint16_t current = Samples[i];
+  // Arm below the low threshold, then trigger at the high threshold.
+  // Keep enough samples remaining for the complete display window.
+  for (uint16_t i = 0U; i <= ADC_SAMPLES_PER_HALF - ADC_DISPLAY_SAMPLES; i++) {
+    uint16_t Sample = Samples[i];
 
-    if (previous < ADC_TRIGGER_LEVEL && current >= ADC_TRIGGER_LEVEL) {
+    if (Sample <= ADC_TRIGGER_LOW_LEVEL) {
+      TriggerArmed = 1U;
+    } else if (TriggerArmed != 0U && Sample >= ADC_TRIGGER_HIGH_LEVEL) {
       triggerIndex = i;
       triggerFound = 1U;
       break;
