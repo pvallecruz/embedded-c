@@ -105,6 +105,9 @@ void RetroScope_DrawLabels(void) {
   // Default trigger direction.
   ST7796_DrawString(180, 10, "TRIG: RISE", ST7796_WHITE, 2);
 
+  // Trigger center voltage; unavailable before the first capture.
+  ST7796_DrawString(306, 14, "-- V", ST7796_CYAN, 1);
+
   // Header status indicators
   ST7796_DrawString(360, 10, "RUN", ST7796_GREEN, 2);
 
@@ -133,12 +136,11 @@ void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge) {
 
   FallingEdge = (FallingEdge != 0U) ? 1U : 0U;
 
-  if (DisplayInitialized != 0U &&
-      FallingEdge == PreviousFallingEdge) {
+  if (DisplayInitialized != 0U && FallingEdge == PreviousFallingEdge) {
     return;
   }
 
-  const char *Text = (FallingEdge != 0U) ? "FALL" : "RISE";
+  const char* Text = (FallingEdge != 0U) ? "FALL" : "RISE";
 
   // Preserve "TRIG: " and replace only the direction.
   ST7796_FillRect(252, 10, 48, 14, UI_PANEL_COLOR);
@@ -146,6 +148,87 @@ void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge) {
 
   PreviousFallingEdge = FallingEdge;
   DisplayInitialized = 1U;
+}
+
+void RetroScope_UpdateTriggerLevel(uint32_t Centivolts) {
+  static uint32_t PreviousCentivolts = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  if (DisplayInitialized != 0U && Centivolts == PreviousCentivolts) {
+    return;
+  }
+
+  char Text[12];
+
+  // Limit formatting to values that fit the display field.
+  if (Centivolts <= 999U) {
+    snprintf(Text, sizeof(Text), "%lu.%02lu V",
+             (unsigned long)(Centivolts / 100U),
+             (unsigned long)(Centivolts % 100U));
+  } else {
+    snprintf(Text, sizeof(Text), "-- V");
+  }
+
+  ST7796_FillRect(306, 14, 36, 7, UI_PANEL_COLOR);
+  ST7796_DrawString(306, 14, Text, ST7796_CYAN, 1);
+
+  PreviousCentivolts = Centivolts;
+  DisplayInitialized = 1U;
+}
+
+void RetroScope_UpdateTriggerMarker(uint32_t TriggerLevel,
+                                    uint32_t VerticalScale,
+                                    float ReferenceVolts) {
+  static uint16_t PreviousY = 0U;
+  static uint8_t MarkerInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  if (TriggerLevel > 4095U) {
+    TriggerLevel = 4095U;
+  }
+
+  uint32_t Scaled;
+
+  if (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV) {
+    float Pixels =
+        ((float)TriggerLevel / 4095.0f) * ReferenceVolts * GRID_SPACING;
+
+    if (!(Pixels >= 0.0f)) {
+      Pixels = 0.0f;
+    } else if (Pixels > (float)(GRID_HEIGHT - 1U)) {
+      Pixels = (float)(GRID_HEIGHT - 1U);
+    }
+
+    Scaled = (uint32_t)Pixels;
+  } else {
+    Scaled = (TriggerLevel * (GRID_HEIGHT - 1U)) / 4095U;
+  }
+
+  uint16_t MarkerY = GRID_Y + GRID_HEIGHT - 1U - (uint16_t)Scaled;
+
+  if (MarkerInitialized != 0U && MarkerY == PreviousY) {
+    return;
+  }
+
+  // Erase the old marker in the margin outside the grid.
+  if (MarkerInitialized != 0U) {
+    ST7796_FillRect(GRID_X - 8U, PreviousY - 3U, 7U, 7U, UI_WAVE_COLOR);
+  }
+
+  // Draw a right-pointing arrow without touching the grid.
+  ST7796_DrawLine(GRID_X - 8U, MarkerY, GRID_X - 2U, MarkerY, ST7796_CYAN);
+  ST7796_DrawLine(GRID_X - 5U, MarkerY - 3U, GRID_X - 2U, MarkerY, ST7796_CYAN);
+  ST7796_DrawLine(GRID_X - 5U, MarkerY + 3U, GRID_X - 2U, MarkerY, ST7796_CYAN);
+
+  PreviousY = MarkerY;
+  MarkerInitialized = 1U;
 }
 
 void RetroScope_UpdateTimebase(uint32_t TimebaseUs) {
@@ -164,10 +247,8 @@ void RetroScope_UpdateTimebase(uint32_t TimebaseUs) {
     return;
   }
 
-  const char *Text =
-      (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS)
-          ? "2.00 MS/DIV"
-          : "4.00 MS/DIV";
+  const char* Text =
+      (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? "2.00 MS/DIV" : "4.00 MS/DIV";
 
   ST7796_FillRect(250, 273, 132, 14, UI_PANEL_COLOR);
   ST7796_DrawString(250, 273, Text, ST7796_WHITE, 2);
@@ -187,15 +268,13 @@ void RetroScope_UpdateVerticalScale(uint32_t VerticalScale) {
     VerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
   }
 
-  if (DisplayInitialized != 0U &&
-      VerticalScale == PreviousScale) {
+  if (DisplayInitialized != 0U && VerticalScale == PreviousScale) {
     return;
   }
 
-  const char *Text =
-      (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV)
-          ? "1.00 V/DIV"
-          : "0.66 V/DIV";
+  const char* Text = (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV)
+                         ? "1.00 V/DIV"
+                         : "0.66 V/DIV";
 
   ST7796_FillRect(110, 273, 120, 14, UI_PANEL_COLOR);
   ST7796_DrawString(110, 273, Text, ST7796_WHITE, 2);
@@ -436,16 +515,13 @@ void RetroScope_RenderStep(void) {
   }
 }
 
-void RetroScope_LoadAdcWaveform(const uint16_t *samples,
-                               uint32_t TimebaseUs,
-                               uint32_t VerticalScale,
-                               float ReferenceVolts) {
+void RetroScope_LoadAdcWaveform(const uint16_t* samples, uint32_t TimebaseUs,
+                                uint32_t VerticalScale, float ReferenceVolts) {
   if (samples == NULL || FrameActive != 0U) {
     return;
   }
 
-  uint16_t SampleDivisor =
-      (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? 2U : 1U;
+  uint16_t SampleDivisor = (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? 2U : 1U;
 
   for (uint16_t i = 0U; i < WAVEFORM_SAMPLES; i++) {
     uint16_t adc = samples[i / SampleDivisor];
@@ -457,8 +533,7 @@ void RetroScope_LoadAdcWaveform(const uint16_t *samples,
     uint32_t scaled;
 
     if (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV) {
-      float Pixels =
-          ((float)adc / 4095.0f) * ReferenceVolts * GRID_SPACING;
+      float Pixels = ((float)adc / 4095.0f) * ReferenceVolts * GRID_SPACING;
 
       // Bound the coordinate before converting to an integer.
       if (!(Pixels >= 0.0f)) {

@@ -24,15 +24,17 @@ void RetroScope_DrawGrid(void);
 void RetroScope_DrawLabels(void);
 void RetroScope_UpdateTimebase(uint32_t TimebaseUs);
 void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid);
-void RetroScope_LoadAdcWaveform(const uint16_t *samples,
-                               uint32_t TimebaseUs,
-                               uint32_t VerticalScale,
-                               float ReferenceVolts);
+void RetroScope_LoadAdcWaveform(const uint16_t* samples, uint32_t TimebaseUs,
+                                uint32_t VerticalScale, float ReferenceVolts);
 uint8_t RetroScope_IsFrameActive(void);
 void RetroScope_BeginFrame(void);
 void RetroScope_RenderStep(void);
 void RetroScope_UpdateVpp(uint32_t Centivolts, uint8_t Valid);
 void RetroScope_UpdateVerticalScale(uint32_t VerticalScale);
 void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge);
+void RetroScope_UpdateTriggerLevel(uint32_t Centivolts);
+void RetroScope_UpdateTriggerMarker(uint32_t TriggerLevel,
+                                    uint32_t VerticalScale,
+                                    float ReferenceVolts);
 
 #endif /* INC_RETROSCOPE_UI_H_ */

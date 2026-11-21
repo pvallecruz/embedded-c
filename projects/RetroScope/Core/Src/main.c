@@ -123,7 +123,10 @@ volatile uint32_t RequestedTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
 volatile uint32_t RequestedVerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
 // Requested waveform trigger edge; rising is the default.
 volatile uint32_t RequestedTriggerEdge = ADC_TRIGGER_EDGE_RISING;
+// Requested trigger center level, in raw ADC counts.
+volatile uint32_t RequestedTriggerLevel = ADC_TRIGGER_LEVEL;
 static uint32_t SnapshotTriggerEdge = ADC_TRIGGER_EDGE_RISING;
+static uint32_t SnapshotTriggerLevel = ADC_TRIGGER_LEVEL;
 
 /* USER CODE END PV */
 
@@ -347,8 +350,17 @@ int main(void) {
                                    ADC_REFERENCE_VOLTS);
         RetroScope_UpdateTimebase(TimebaseUs);
         RetroScope_UpdateVerticalScale(VerticalScale);
-        RetroScope_UpdateTriggerEdge(
-            SnapshotTriggerEdge == ADC_TRIGGER_EDGE_FALLING);
+        RetroScope_UpdateTriggerEdge(SnapshotTriggerEdge ==
+                                     ADC_TRIGGER_EDGE_FALLING);
+        float TriggerVolts =
+            ((float)SnapshotTriggerLevel / (float)ADC_MAX_COUNT) *
+            ADC_REFERENCE_VOLTS;
+        uint32_t TriggerCentivolts = (uint32_t)(TriggerVolts * 100.0f + 0.5f);
+
+        RetroScope_UpdateTriggerLevel(TriggerCentivolts);
+        RetroScope_UpdateTriggerMarker(SnapshotTriggerLevel,
+                                        VerticalScale,
+                                        ADC_REFERENCE_VOLTS);
         RetroScope_BeginFrame();
       }
     }
@@ -543,20 +555,32 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
     TriggerEdge = ADC_TRIGGER_EDGE_RISING;
   }
 
+  // Read once and keep both hysteresis thresholds within the ADC range.
+  uint32_t TriggerLevel = RequestedTriggerLevel;
+
+  if (TriggerLevel < ADC_TRIGGER_HYSTERESIS) {
+    TriggerLevel = ADC_TRIGGER_HYSTERESIS;
+  } else if (TriggerLevel > ADC_MAX_COUNT - ADC_TRIGGER_HYSTERESIS) {
+    TriggerLevel = ADC_MAX_COUNT - ADC_TRIGGER_HYSTERESIS;
+  }
+
+  uint32_t TriggerLowLevel = TriggerLevel - ADC_TRIGGER_HYSTERESIS;
+  uint32_t TriggerHighLevel = TriggerLevel + ADC_TRIGGER_HYSTERESIS;
+
   // Keep enough samples remaining for the complete display window.
   for (uint16_t i = 0U; i <= ADC_SAMPLES_PER_HALF - ADC_DISPLAY_SAMPLES; i++) {
     uint16_t Sample = Samples[i];
 
     if (TriggerEdge == ADC_TRIGGER_EDGE_FALLING) {
-      if (Sample >= ADC_TRIGGER_HIGH_LEVEL) {
+      if (Sample >= TriggerHighLevel) {
         TriggerArmed = 1U;
-      } else if (TriggerArmed != 0U && Sample <= ADC_TRIGGER_LOW_LEVEL) {
+      } else if (TriggerArmed != 0U && Sample <= TriggerLowLevel) {
         triggerFound = 1U;
       }
     } else {
-      if (Sample <= ADC_TRIGGER_LOW_LEVEL) {
+      if (Sample <= TriggerLowLevel) {
         TriggerArmed = 1U;
-      } else if (TriggerArmed != 0U && Sample >= ADC_TRIGGER_HIGH_LEVEL) {
+      } else if (TriggerArmed != 0U && Sample >= TriggerHighLevel) {
         triggerFound = 1U;
       }
     }
@@ -579,6 +603,7 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
 
   AdcLatestSample = AdcSnapshot[ADC_DISPLAY_SAMPLES - 1U];
   SnapshotTriggerEdge = TriggerEdge;
+  SnapshotTriggerLevel = TriggerLevel;
   AdcSnapshotCount++;
 
   uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
