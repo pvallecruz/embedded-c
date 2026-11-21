@@ -113,6 +113,9 @@ void RetroScope_DrawLabels(void) {
 
   ST7796_DrawString(420, 10, "AUTO", ST7796_WHITE, 1);
 
+  // Capture status is unavailable until the first snapshot.
+  ST7796_DrawString(420, 22, "--", ST7796_WHITE, 1);
+
   // Bottom information panel
   ST7796_DrawString(15, 273, "CH1", ST7796_GREEN, 2);
 
@@ -124,6 +127,31 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
   // Estimated peak-to-peak voltage; unavailable before the first capture.
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
+}
+
+void RetroScope_UpdateTriggerStatus(uint8_t Triggered) {
+  static uint8_t PreviousTriggered = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  Triggered = (Triggered != 0U) ? 1U : 0U;
+
+  if (DisplayInitialized != 0U &&
+      Triggered == PreviousTriggered) {
+    return;
+  }
+
+  const char *Text = (Triggered != 0U) ? "TRIG" : "FREE";
+  uint16_t Color = (Triggered != 0U) ? ST7796_GREEN : ST7796_WHITE;
+
+  ST7796_FillRect(420, 22, 24, 7, UI_PANEL_COLOR);
+  ST7796_DrawString(420, 22, Text, Color, 1);
+
+  PreviousTriggered = Triggered;
+  DisplayInitialized = 1U;
 }
 
 void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge) {
