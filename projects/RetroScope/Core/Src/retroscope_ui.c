@@ -119,7 +119,7 @@ void RetroScope_DrawLabels(void) {
   // Bottom information panel
   ST7796_DrawString(15, 273, "CH1", ST7796_GREEN, 2);
 
-  // Fixed scales for the current ADC mapping and sampling configuration.
+  // Initial scale labels; updated when the requested display scales change.
   ST7796_DrawString(110, 273, "0.66 V/DIV", ST7796_WHITE, 2);
   ST7796_DrawString(250, 273, "4.00 MS/DIV", ST7796_WHITE, 2);
 
