@@ -20,6 +20,7 @@
 #define ST7796_WHITE 0xFFFFU
 #define ST7796_CYAN 0x07FFU
 
+
 // Accumulated RGB565 pixel-transfer cycles; excludes command overhead.
 extern volatile uint32_t SpiTransferCycles;
 

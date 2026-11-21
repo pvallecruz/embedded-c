@@ -129,6 +129,31 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
 }
 
+void RetroScope_UpdateRunStatus(uint8_t Running) {
+  static uint8_t PreviousRunning = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  Running = (Running != 0U) ? 1U : 0U;
+
+  if (DisplayInitialized != 0U &&
+      Running == PreviousRunning) {
+    return;
+  }
+
+  const char *Text = (Running != 0U) ? "RUN" : "STOP";
+  uint16_t Color = (Running != 0U) ? ST7796_GREEN : ST7796_RED;
+
+  ST7796_FillRect(360, 10, 48, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(360, 10, Text, Color, 2);
+
+  PreviousRunning = Running;
+  DisplayInitialized = 1U;
+}
+
 void RetroScope_UpdateTriggerStatus(uint8_t Triggered) {
   static uint8_t PreviousTriggered = 0U;
   static uint8_t DisplayInitialized = 0U;

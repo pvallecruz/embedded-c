@@ -114,6 +114,11 @@ static uint32_t LastFrequencyDisplayTick = 0U;
 volatile float AdcMinVolts = 0.0f;
 volatile float AdcMaxVolts = 0.0f;
 volatile float AdcPeakToPeakVolts = 0.0f;
+// Display control: 0 stops updates; nonzero runs.
+volatile uint32_t RequestedRun = 1U;
+
+// Applied only between complete waveform frames.
+static uint8_t DisplayRunning = 1U;
 // Requested horizontal scale, in microseconds per division.
 volatile uint32_t RequestedTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
 // Requested vertical display mode.
@@ -316,7 +321,22 @@ int main(void)
 
     uint32_t CurrentTick = HAL_GetTick();
 
-    if (RetroScope_IsFrameActive() == 0U &&
+    // Apply Run/Stop only after the current frame is complete.
+    if (RetroScope_IsFrameActive() == 0U) {
+      uint8_t RunRequested = (RequestedRun != 0U) ? 1U : 0U;
+
+      if (RunRequested != DisplayRunning) {
+        DisplayRunning = RunRequested;
+
+        // Exclude time spent stopped from the next FPS calculation.
+        PreviousFrameStart = 0U;
+      }
+
+      RetroScope_UpdateRunStatus(DisplayRunning);
+    }
+
+    if (DisplayRunning != 0U &&
+        RetroScope_IsFrameActive() == 0U &&
         (uint32_t)(CurrentTick - LastFrameTick) >= FRAME_INTERVAL_MS) {
       if (RetroScope_GetAdcSnapshot()) {
         if (PreviousFrameStart != 0U) {
@@ -389,7 +409,8 @@ int main(void)
 
     uint32_t FrequencyDisplayTick = HAL_GetTick();
 
-    if (RetroScope_IsFrameActive() == 0U &&
+    if (DisplayRunning != 0U &&
+        RetroScope_IsFrameActive() == 0U &&
         (uint32_t)(FrequencyDisplayTick - LastFrequencyDisplayTick) >= 250U) {
       float FrequencyHz = AdcFrequencyHz;
       uint8_t Valid = (AdcFrequencyValid != 0U && FrequencyHz > 0.0f &&
