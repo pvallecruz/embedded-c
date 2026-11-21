@@ -114,6 +114,8 @@ volatile float AdcMaxVolts = 0.0f;
 volatile float AdcPeakToPeakVolts = 0.0f;
 // Requested horizontal scale, in microseconds per division.
 volatile uint32_t RequestedTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
+// Requested vertical display mode.
+volatile uint32_t RequestedVerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
 
 /* USER CODE END PV */
 
@@ -326,9 +328,17 @@ int main(void) {
           TimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
         }
 
+        uint32_t VerticalScale = RequestedVerticalScale;
+
+        if (VerticalScale != RETROSCOPE_VERTICAL_1_V_DIV) {
+          VerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+        }
+
         RetroScope_MeasureAdcRange();
-        RetroScope_LoadAdcWaveform(AdcDisplayBuffer, TimebaseUs);
+        RetroScope_LoadAdcWaveform(AdcDisplayBuffer, TimebaseUs, VerticalScale,
+                                   ADC_REFERENCE_VOLTS);
         RetroScope_UpdateTimebase(TimebaseUs);
+        RetroScope_UpdateVerticalScale(VerticalScale);
         RetroScope_BeginFrame();
       }
     }
@@ -371,8 +381,7 @@ int main(void) {
       RetroScope_UpdateFrequency(RoundedHz, Valid);
       float PeakToPeakVolts = AdcPeakToPeakVolts;
       uint8_t VppValid =
-          (DisplaySnapshotCount != 0U &&
-           PeakToPeakVolts >= 0.0f &&
+          (DisplaySnapshotCount != 0U && PeakToPeakVolts >= 0.0f &&
            PeakToPeakVolts <= ADC_REFERENCE_VOLTS);
 
       uint32_t Centivolts = 0U;

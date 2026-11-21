@@ -147,6 +147,35 @@ void RetroScope_UpdateTimebase(uint32_t TimebaseUs) {
   PreviousTimebaseUs = TimebaseUs;
 }
 
+void RetroScope_UpdateVerticalScale(uint32_t VerticalScale) {
+  static uint32_t PreviousScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  if (VerticalScale != RETROSCOPE_VERTICAL_1_V_DIV) {
+    VerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+  }
+
+  if (DisplayInitialized != 0U &&
+      VerticalScale == PreviousScale) {
+    return;
+  }
+
+  const char *Text =
+      (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV)
+          ? "1.00 V/DIV"
+          : "0.66 V/DIV";
+
+  ST7796_FillRect(110, 273, 120, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(110, 273, Text, ST7796_WHITE, 2);
+
+  PreviousScale = VerticalScale;
+  DisplayInitialized = 1U;
+}
+
 void RetroScope_UpdateFrequency(uint32_t FrequencyHz, uint8_t Valid) {
   static uint32_t PreviousHz = 0U;
   static uint8_t PreviousValid = 0U;
@@ -379,12 +408,16 @@ void RetroScope_RenderStep(void) {
   }
 }
 
-void RetroScope_LoadAdcWaveform(const uint16_t* samples, uint32_t TimebaseUs) {
+void RetroScope_LoadAdcWaveform(const uint16_t *samples,
+                               uint32_t TimebaseUs,
+                               uint32_t VerticalScale,
+                               float ReferenceVolts) {
   if (samples == NULL || FrameActive != 0U) {
     return;
   }
 
-  uint16_t SampleDivisor = (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? 2U : 1U;
+  uint16_t SampleDivisor =
+      (TimebaseUs == RETROSCOPE_TIMEBASE_2_MS) ? 2U : 1U;
 
   for (uint16_t i = 0U; i < WAVEFORM_SAMPLES; i++) {
     uint16_t adc = samples[i / SampleDivisor];
@@ -393,10 +426,25 @@ void RetroScope_LoadAdcWaveform(const uint16_t* samples, uint32_t TimebaseUs) {
       adc = 4095U;
     }
 
-    // Map 0–4095 to the vertical graticule.
-    uint32_t scaled = ((uint32_t)adc * (GRID_HEIGHT - 1U)) / 4095U;
+    uint32_t scaled;
 
-    // Screen Y increases downward.
+    if (VerticalScale == RETROSCOPE_VERTICAL_1_V_DIV) {
+      float Pixels =
+          ((float)adc / 4095.0f) * ReferenceVolts * GRID_SPACING;
+
+      // Bound the coordinate before converting to an integer.
+      if (!(Pixels >= 0.0f)) {
+        Pixels = 0.0f;
+      } else if (Pixels > (float)(GRID_HEIGHT - 1U)) {
+        Pixels = (float)(GRID_HEIGHT - 1U);
+      }
+
+      scaled = (uint32_t)Pixels;
+    } else {
+      // Preserve the original full-range mapping.
+      scaled = ((uint32_t)adc * (GRID_HEIGHT - 1U)) / 4095U;
+    }
+
     Waveform[i] = GRID_Y + GRID_HEIGHT - 1U - (uint16_t)scaled;
   }
 }
