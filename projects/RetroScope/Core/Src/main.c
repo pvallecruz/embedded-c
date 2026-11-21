@@ -49,6 +49,8 @@
 #define ADC_TRIGGER_HYSTERESIS 64U
 #define ADC_TRIGGER_LOW_LEVEL (ADC_TRIGGER_LEVEL - ADC_TRIGGER_HYSTERESIS)
 #define ADC_TRIGGER_HIGH_LEVEL (ADC_TRIGGER_LEVEL + ADC_TRIGGER_HYSTERESIS)
+#define ADC_TRIGGER_EDGE_RISING 0U
+#define ADC_TRIGGER_EDGE_FALLING 1U
 // Nominal sampling rate for the current fixed TIM2 configuration.
 #define ADC_SAMPLE_RATE_HZ 10000U
 // Frequency detection thresholds in raw ADC counts.
@@ -119,6 +121,9 @@ volatile float AdcPeakToPeakVolts = 0.0f;
 volatile uint32_t RequestedTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
 // Requested vertical display mode.
 volatile uint32_t RequestedVerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+// Requested waveform trigger edge; rising is the default.
+volatile uint32_t RequestedTriggerEdge = ADC_TRIGGER_EDGE_RISING;
+static uint32_t SnapshotTriggerEdge = ADC_TRIGGER_EDGE_RISING;
 
 /* USER CODE END PV */
 
@@ -342,6 +347,8 @@ int main(void) {
                                    ADC_REFERENCE_VOLTS);
         RetroScope_UpdateTimebase(TimebaseUs);
         RetroScope_UpdateVerticalScale(VerticalScale);
+        RetroScope_UpdateTriggerEdge(
+            SnapshotTriggerEdge == ADC_TRIGGER_EDGE_FALLING);
         RetroScope_BeginFrame();
       }
     }
@@ -530,16 +537,32 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   uint8_t triggerFound = 0U;
   uint8_t TriggerArmed = 0U;
 
-  // Arm below the low threshold, then trigger at the high threshold.
+  // Read once so the selected edge stays consistent during this capture.
+  uint32_t TriggerEdge = RequestedTriggerEdge;
+  if (TriggerEdge != ADC_TRIGGER_EDGE_FALLING) {
+    TriggerEdge = ADC_TRIGGER_EDGE_RISING;
+  }
+
   // Keep enough samples remaining for the complete display window.
   for (uint16_t i = 0U; i <= ADC_SAMPLES_PER_HALF - ADC_DISPLAY_SAMPLES; i++) {
     uint16_t Sample = Samples[i];
 
-    if (Sample <= ADC_TRIGGER_LOW_LEVEL) {
-      TriggerArmed = 1U;
-    } else if (TriggerArmed != 0U && Sample >= ADC_TRIGGER_HIGH_LEVEL) {
+    if (TriggerEdge == ADC_TRIGGER_EDGE_FALLING) {
+      if (Sample >= ADC_TRIGGER_HIGH_LEVEL) {
+        TriggerArmed = 1U;
+      } else if (TriggerArmed != 0U && Sample <= ADC_TRIGGER_LOW_LEVEL) {
+        triggerFound = 1U;
+      }
+    } else {
+      if (Sample <= ADC_TRIGGER_LOW_LEVEL) {
+        TriggerArmed = 1U;
+      } else if (TriggerArmed != 0U && Sample >= ADC_TRIGGER_HIGH_LEVEL) {
+        triggerFound = 1U;
+      }
+    }
+
+    if (triggerFound != 0U) {
       triggerIndex = i;
-      triggerFound = 1U;
       break;
     }
   }
@@ -555,6 +578,7 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   }
 
   AdcLatestSample = AdcSnapshot[ADC_DISPLAY_SAMPLES - 1U];
+  SnapshotTriggerEdge = TriggerEdge;
   AdcSnapshotCount++;
 
   uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;

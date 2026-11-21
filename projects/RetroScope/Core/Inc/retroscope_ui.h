@@ -33,5 +33,6 @@ void RetroScope_BeginFrame(void);
 void RetroScope_RenderStep(void);
 void RetroScope_UpdateVpp(uint32_t Centivolts, uint8_t Valid);
 void RetroScope_UpdateVerticalScale(uint32_t VerticalScale);
+void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge);
 
 #endif /* INC_RETROSCOPE_UI_H_ */

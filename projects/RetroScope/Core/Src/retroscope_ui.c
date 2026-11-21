@@ -102,6 +102,9 @@ void RetroScope_DrawLabels(void) {
   // Header title
   ST7796_DrawString(12, 10, "RETROSCOPE", ST7796_WHITE, 2);
 
+  // Default trigger direction.
+  ST7796_DrawString(180, 10, "TRIG: RISE", ST7796_WHITE, 2);
+
   // Header status indicators
   ST7796_DrawString(360, 10, "RUN", ST7796_GREEN, 2);
 
@@ -118,6 +121,31 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
   // Estimated peak-to-peak voltage; unavailable before the first capture.
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
+}
+
+void RetroScope_UpdateTriggerEdge(uint8_t FallingEdge) {
+  static uint8_t PreviousFallingEdge = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  FallingEdge = (FallingEdge != 0U) ? 1U : 0U;
+
+  if (DisplayInitialized != 0U &&
+      FallingEdge == PreviousFallingEdge) {
+    return;
+  }
+
+  const char *Text = (FallingEdge != 0U) ? "FALL" : "RISE";
+
+  // Preserve "TRIG: " and replace only the direction.
+  ST7796_FillRect(252, 10, 48, 14, UI_PANEL_COLOR);
+  ST7796_DrawString(252, 10, Text, ST7796_CYAN, 2);
+
+  PreviousFallingEdge = FallingEdge;
+  DisplayInitialized = 1U;
 }
 
 void RetroScope_UpdateTimebase(uint32_t TimebaseUs) {
