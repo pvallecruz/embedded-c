@@ -29,6 +29,7 @@
 
 #include "retroscope_ui.h"
 #include "st7796.h"
+#include "retroscope_input.h"
 
 /* USER CODE END Includes */
 
@@ -150,6 +151,7 @@ static uint32_t ActiveTriggerMode = ADC_TRIGGER_MODE_AUTO;
 static uint8_t TriggerWaiting = 0U;
 // Single capture progresses from armed to captured to rendering.
 static uint8_t SingleState = SINGLE_STATE_IDLE;
+
 
 
 /* USER CODE END PV */
@@ -330,6 +332,19 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    if (RetroScope_InputPollRunStop() != 0U) {
+      if (RequestedTriggerMode == ADC_TRIGGER_MODE_SINGLE) {
+        if (SingleState == SINGLE_STATE_IDLE) {
+          RequestedSingleArm = 1U;
+        } else {
+          RequestedSingleArm = 0U;
+          RequestedRun = 0U;
+        }
+      } else {
+        RequestedRun = (RequestedRun != 0U) ? 0U : 1U;
+      }
+    }
 
     // Stop or leaving Single mode cancels an unfinished Single operation.
     if (SingleState != SINGLE_STATE_IDLE &&

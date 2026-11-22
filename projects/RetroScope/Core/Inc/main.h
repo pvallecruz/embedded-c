@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define TFT_RST_GPIO_Port GPIOB
 #define TFT_DC_Pin GPIO_PIN_1
 #define TFT_DC_GPIO_Port GPIOB
+#define RUN_STOP_BTN_Pin GPIO_PIN_7
+#define RUN_STOP_BTN_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
 
