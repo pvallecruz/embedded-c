@@ -48,6 +48,8 @@
 #define ADC_TRIGGER_HYSTERESIS 64U
 #define ADC_TRIGGER_EDGE_RISING 0U
 #define ADC_TRIGGER_EDGE_FALLING 1U
+#define ADC_TRIGGER_MODE_AUTO 0U
+#define ADC_TRIGGER_MODE_NORMAL 1U
 // Nominal sampling rate for the current fixed TIM2 configuration.
 #define ADC_SAMPLE_RATE_HZ 10000U
 // Frequency detection thresholds in raw ADC counts.
@@ -128,9 +130,18 @@ volatile uint32_t RequestedTriggerEdge = ADC_TRIGGER_EDGE_RISING;
 // Requested trigger center level, in raw ADC counts.
 volatile uint32_t RequestedTriggerLevel = ADC_TRIGGER_LEVEL;
 static uint32_t SnapshotTriggerEdge = ADC_TRIGGER_EDGE_RISING;
+// Requested trigger mode; Auto allows free-running fallback captures.
+volatile uint32_t RequestedTriggerMode = ADC_TRIGGER_MODE_AUTO;
 static uint32_t SnapshotTriggerLevel = ADC_TRIGGER_LEVEL;
 // 1: a trigger was found. 0: this snapshot uses the fallback window.
 static uint8_t SnapshotTriggered = 0U;
+static float SnapshotFrequencyHz = 0.0f;
+static uint8_t SnapshotFrequencyValid = 0U;
+static float DisplayFrequencyHz = 0.0f;
+static uint8_t DisplayFrequencyValid = 0U;
+static uint32_t ActiveTriggerMode = ADC_TRIGGER_MODE_AUTO;
+static uint8_t TriggerWaiting = 0U;
+
 
 /* USER CODE END PV */
 
@@ -206,6 +217,8 @@ static uint8_t RetroScope_GetAdcSnapshot(void) {
     AdcDisplayBuffer[i] = AdcSnapshot[i];
   }
 
+  DisplayFrequencyHz = SnapshotFrequencyHz;
+  DisplayFrequencyValid = SnapshotFrequencyValid;
   LastDisplayedSnapshot = AdcSnapshotCount;
 
   DisplaySnapshotCount++;
@@ -311,8 +324,8 @@ int main(void)
     if (AdcCaptureReady != 0U) {
       __DMB();
 
-      RetroScope_ProcessAdcCapture(AdcCaptureBuffer);
       RetroScope_MeasureFrequency(AdcCaptureBuffer);
+      RetroScope_ProcessAdcCapture(AdcCaptureBuffer);
 
       __DMB();
       // Release only after all reads of the capture have completed.
@@ -333,6 +346,15 @@ int main(void)
       }
 
       RetroScope_UpdateRunStatus(DisplayRunning);
+
+      if (DisplayRunning != 0U) {
+        RetroScope_UpdateTriggerMode(
+            ActiveTriggerMode == ADC_TRIGGER_MODE_NORMAL);
+
+        if (TriggerWaiting != 0U) {
+          RetroScope_UpdateTriggerStatus(0U, 1U);
+        }
+      }
     }
 
     if (DisplayRunning != 0U &&
@@ -381,7 +403,7 @@ int main(void)
         RetroScope_UpdateTriggerMarker(SnapshotTriggerLevel,
                                         VerticalScale,
                                         ADC_REFERENCE_VOLTS);
-        RetroScope_UpdateTriggerStatus(SnapshotTriggered);
+        RetroScope_UpdateTriggerStatus(SnapshotTriggered, TriggerWaiting);
         RetroScope_BeginFrame();
       }
     }
@@ -412,9 +434,9 @@ int main(void)
     if (DisplayRunning != 0U &&
         RetroScope_IsFrameActive() == 0U &&
         (uint32_t)(FrequencyDisplayTick - LastFrequencyDisplayTick) >= 250U) {
-      float FrequencyHz = AdcFrequencyHz;
-      uint8_t Valid = (AdcFrequencyValid != 0U && FrequencyHz > 0.0f &&
-                       FrequencyHz <= (float)ADC_SAMPLE_RATE_HZ / 2.0f);
+	  float FrequencyHz = DisplayFrequencyHz;
+	  uint8_t Valid = (DisplayFrequencyValid != 0U && FrequencyHz > 0.0f &&
+					   FrequencyHz <= (float)ADC_SAMPLE_RATE_HZ / 2.0f);
 
       uint32_t RoundedHz = 0U;
 
@@ -574,6 +596,12 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   uint8_t triggerFound = 0U;
   uint8_t TriggerArmed = 0U;
 
+  // Read once; unsupported modes use Auto.
+  uint32_t TriggerMode = RequestedTriggerMode;
+  if (TriggerMode != ADC_TRIGGER_MODE_NORMAL) {
+    TriggerMode = ADC_TRIGGER_MODE_AUTO;
+  }
+
   // Read once so the selected edge stays consistent during this capture.
   uint32_t TriggerEdge = RequestedTriggerEdge;
   if (TriggerEdge != ADC_TRIGGER_EDGE_FALLING) {
@@ -616,21 +644,32 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
     }
   }
 
-  // No trigger: display the beginning of the capture.
-  if (triggerFound == 0U) {
-    triggerIndex = 0U;
-  }
+  // Acquisition status updates even when Normal holds the last snapshot.
+  ActiveTriggerMode = TriggerMode;
+  TriggerWaiting =
+      (TriggerMode == ADC_TRIGGER_MODE_NORMAL && triggerFound == 0U)
+          ? 1U
+          : 0U;
 
-  // Copy the display window starting at the trigger.
-  for (uint16_t i = 0U; i < ADC_DISPLAY_SAMPLES; i++) {
-    AdcSnapshot[i] = Samples[triggerIndex + i];
-  }
+  // Normal publishes only triggered captures; Auto also allows fallback.
+  if (triggerFound != 0U || TriggerMode == ADC_TRIGGER_MODE_AUTO) {
+    if (triggerFound == 0U) {
+      triggerIndex = 0U;
+    }
 
-  AdcLatestSample = AdcSnapshot[ADC_DISPLAY_SAMPLES - 1U];
-  SnapshotTriggerEdge = TriggerEdge;
-  SnapshotTriggerLevel = TriggerLevel;
-  SnapshotTriggered = triggerFound;
-  AdcSnapshotCount++;
+    // Copy the complete display window.
+    for (uint16_t i = 0U; i < ADC_DISPLAY_SAMPLES; i++) {
+      AdcSnapshot[i] = Samples[triggerIndex + i];
+    }
+
+    AdcLatestSample = AdcSnapshot[ADC_DISPLAY_SAMPLES - 1U];
+    SnapshotTriggerEdge = TriggerEdge;
+    SnapshotTriggerLevel = TriggerLevel;
+    SnapshotTriggered = triggerFound;
+    SnapshotFrequencyHz = AdcFrequencyHz;
+    SnapshotFrequencyValid = (AdcFrequencyValid != 0U) ? 1U : 0U;
+    AdcSnapshotCount++;
+  }
 
   uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
 

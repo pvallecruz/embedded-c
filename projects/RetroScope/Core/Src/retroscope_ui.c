@@ -154,28 +154,61 @@ void RetroScope_UpdateRunStatus(uint8_t Running) {
   DisplayInitialized = 1U;
 }
 
-void RetroScope_UpdateTriggerStatus(uint8_t Triggered) {
-  static uint8_t PreviousTriggered = 0U;
+void RetroScope_UpdateTriggerMode(uint8_t NormalMode) {
+  static uint8_t PreviousNormalMode = 0U;
   static uint8_t DisplayInitialized = 0U;
 
   if (FrameActive != 0U) {
     return;
   }
 
-  Triggered = (Triggered != 0U) ? 1U : 0U;
+  NormalMode = (NormalMode != 0U) ? 1U : 0U;
 
   if (DisplayInitialized != 0U &&
-      Triggered == PreviousTriggered) {
+      NormalMode == PreviousNormalMode) {
     return;
   }
 
-  const char *Text = (Triggered != 0U) ? "TRIG" : "FREE";
-  uint16_t Color = (Triggered != 0U) ? ST7796_GREEN : ST7796_WHITE;
+  const char *Text = (NormalMode != 0U) ? "NORM" : "AUTO";
+
+  ST7796_FillRect(420, 10, 24, 7, UI_PANEL_COLOR);
+  ST7796_DrawString(420, 10, Text, ST7796_WHITE, 1);
+
+  PreviousNormalMode = NormalMode;
+  DisplayInitialized = 1U;
+}
+
+void RetroScope_UpdateTriggerStatus(uint8_t Triggered, uint8_t Waiting) {
+  static uint8_t PreviousStatus = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  // Waiting takes priority over the held snapshot's trigger result.
+  uint8_t Status = (Waiting != 0U) ? 2U : ((Triggered != 0U) ? 1U : 0U);
+
+  if (DisplayInitialized != 0U && Status == PreviousStatus) {
+    return;
+  }
+
+  const char *Text;
+  uint16_t Color = ST7796_WHITE;
+
+  if (Status == 2U) {
+    Text = "WAIT";
+  } else if (Status == 1U) {
+    Text = "TRIG";
+    Color = ST7796_GREEN;
+  } else {
+    Text = "FREE";
+  }
 
   ST7796_FillRect(420, 22, 24, 7, UI_PANEL_COLOR);
   ST7796_DrawString(420, 22, Text, Color, 1);
 
-  PreviousTriggered = Triggered;
+  PreviousStatus = Status;
   DisplayInitialized = 1U;
 }
 

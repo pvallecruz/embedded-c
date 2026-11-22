@@ -36,7 +36,8 @@ void RetroScope_UpdateTriggerLevel(uint32_t Centivolts);
 void RetroScope_UpdateTriggerMarker(uint32_t TriggerLevel,
                                     uint32_t VerticalScale,
                                     float ReferenceVolts);
-void RetroScope_UpdateTriggerStatus(uint8_t Triggered);
+void RetroScope_UpdateTriggerStatus(uint8_t Triggered, uint8_t Waiting);
 void RetroScope_UpdateRunStatus(uint8_t Running);
+void RetroScope_UpdateTriggerMode(uint8_t NormalMode);
 
 #endif /* INC_RETROSCOPE_UI_H_ */
