@@ -154,27 +154,37 @@ void RetroScope_UpdateRunStatus(uint8_t Running) {
   DisplayInitialized = 1U;
 }
 
-void RetroScope_UpdateTriggerMode(uint8_t NormalMode) {
-  static uint8_t PreviousNormalMode = 0U;
+void RetroScope_UpdateTriggerMode(uint32_t Mode) {
+  static uint32_t PreviousMode = 0U;
   static uint8_t DisplayInitialized = 0U;
 
   if (FrameActive != 0U) {
     return;
   }
 
-  NormalMode = (NormalMode != 0U) ? 1U : 0U;
+  // Mode values: 0 = Auto, 1 = Normal, 2 = Single.
+  if (Mode > 2U) {
+    Mode = 0U;
+  }
 
-  if (DisplayInitialized != 0U &&
-      NormalMode == PreviousNormalMode) {
+  if (DisplayInitialized != 0U && Mode == PreviousMode) {
     return;
   }
 
-  const char *Text = (NormalMode != 0U) ? "NORM" : "AUTO";
+  const char *Text;
+
+  if (Mode == 2U) {
+    Text = "SNGL";
+  } else if (Mode == 1U) {
+    Text = "NORM";
+  } else {
+    Text = "AUTO";
+  }
 
   ST7796_FillRect(420, 10, 24, 7, UI_PANEL_COLOR);
   ST7796_DrawString(420, 10, Text, ST7796_WHITE, 1);
 
-  PreviousNormalMode = NormalMode;
+  PreviousMode = Mode;
   DisplayInitialized = 1U;
 }
 

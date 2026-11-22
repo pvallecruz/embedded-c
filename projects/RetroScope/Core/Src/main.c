@@ -50,6 +50,11 @@
 #define ADC_TRIGGER_EDGE_FALLING 1U
 #define ADC_TRIGGER_MODE_AUTO 0U
 #define ADC_TRIGGER_MODE_NORMAL 1U
+#define ADC_TRIGGER_MODE_SINGLE 2U
+#define SINGLE_STATE_IDLE 0U
+#define SINGLE_STATE_ARMED 1U
+#define SINGLE_STATE_CAPTURED 2U
+#define SINGLE_STATE_RENDERING 3U
 // Nominal sampling rate for the current fixed TIM2 configuration.
 #define ADC_SAMPLE_RATE_HZ 10000U
 // Frequency detection thresholds in raw ADC counts.
@@ -132,6 +137,8 @@ volatile uint32_t RequestedTriggerLevel = ADC_TRIGGER_LEVEL;
 static uint32_t SnapshotTriggerEdge = ADC_TRIGGER_EDGE_RISING;
 // Requested trigger mode; Auto allows free-running fallback captures.
 volatile uint32_t RequestedTriggerMode = ADC_TRIGGER_MODE_AUTO;
+// Write 1 to request a new Single capture; main clears it when handled.
+volatile uint32_t RequestedSingleArm = 0U;
 static uint32_t SnapshotTriggerLevel = ADC_TRIGGER_LEVEL;
 // 1: a trigger was found. 0: this snapshot uses the fallback window.
 static uint8_t SnapshotTriggered = 0U;
@@ -141,6 +148,8 @@ static float DisplayFrequencyHz = 0.0f;
 static uint8_t DisplayFrequencyValid = 0U;
 static uint32_t ActiveTriggerMode = ADC_TRIGGER_MODE_AUTO;
 static uint8_t TriggerWaiting = 0U;
+// Single capture progresses from armed to captured to rendering.
+static uint8_t SingleState = SINGLE_STATE_IDLE;
 
 
 /* USER CODE END PV */
@@ -321,6 +330,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    // Stop or leaving Single mode cancels an unfinished Single operation.
+    if (SingleState != SINGLE_STATE_IDLE &&
+        (RequestedRun == 0U ||
+         RequestedTriggerMode != ADC_TRIGGER_MODE_SINGLE)) {
+      SingleState = SINGLE_STATE_IDLE;
+      TriggerWaiting = 0U;
+
+      // Discard any accepted snapshot that has not started displaying.
+      LastDisplayedSnapshot = AdcSnapshotCount;
+    }
     if (AdcCaptureReady != 0U) {
       __DMB();
 
@@ -336,6 +356,21 @@ int main(void)
 
     // Apply Run/Stop only after the current frame is complete.
     if (RetroScope_IsFrameActive() == 0U) {
+	  // Accept an arm request only when Single is idle.
+	  if (RequestedSingleArm != 0U) {
+		RequestedSingleArm = 0U;
+
+		if (RequestedTriggerMode == ADC_TRIGGER_MODE_SINGLE &&
+			SingleState == SINGLE_STATE_IDLE) {
+	      // Skip any older snapshot still pending for display.
+		  LastDisplayedSnapshot = AdcSnapshotCount;
+
+		  SingleState = SINGLE_STATE_ARMED;
+		  TriggerWaiting = 1U;
+		  RequestedRun = 1U;
+		  PreviousFrameStart = 0U;
+		 }
+	  }
       uint8_t RunRequested = (RequestedRun != 0U) ? 1U : 0U;
 
       if (RunRequested != DisplayRunning) {
@@ -348,9 +383,7 @@ int main(void)
       RetroScope_UpdateRunStatus(DisplayRunning);
 
       if (DisplayRunning != 0U) {
-        RetroScope_UpdateTriggerMode(
-            ActiveTriggerMode == ADC_TRIGGER_MODE_NORMAL);
-
+        RetroScope_UpdateTriggerMode(ActiveTriggerMode);
         if (TriggerWaiting != 0U) {
           RetroScope_UpdateTriggerStatus(0U, 1U);
         }
@@ -404,6 +437,11 @@ int main(void)
                                         VerticalScale,
                                         ADC_REFERENCE_VOLTS);
         RetroScope_UpdateTriggerStatus(SnapshotTriggered, TriggerWaiting);
+        // Track the frame that contains the accepted Single capture.
+        if (ActiveTriggerMode == ADC_TRIGGER_MODE_SINGLE &&
+            SingleState == SINGLE_STATE_CAPTURED) {
+          SingleState = SINGLE_STATE_RENDERING;
+        }
         RetroScope_BeginFrame();
       }
     }
@@ -433,7 +471,8 @@ int main(void)
 
     if (DisplayRunning != 0U &&
         RetroScope_IsFrameActive() == 0U &&
-        (uint32_t)(FrequencyDisplayTick - LastFrequencyDisplayTick) >= 250U) {
+        ((uint32_t)(FrequencyDisplayTick - LastFrequencyDisplayTick) >= 250U ||
+         SingleState == SINGLE_STATE_RENDERING)) {
 	  float FrequencyHz = DisplayFrequencyHz;
 	  uint8_t Valid = (DisplayFrequencyValid != 0U && FrequencyHz > 0.0f &&
 					   FrequencyHz <= (float)ADC_SAMPLE_RATE_HZ / 2.0f);
@@ -458,6 +497,14 @@ int main(void)
 
       RetroScope_UpdateVpp(Centivolts, VppValid);
       LastFrequencyDisplayTick = FrequencyDisplayTick;
+      // Hold the completed Single frame and its measurements.
+      if (SingleState == SINGLE_STATE_RENDERING) {
+        SingleState = SINGLE_STATE_IDLE;
+        RequestedRun = 0U;
+        DisplayRunning = 0U;
+        PreviousFrameStart = 0U;
+        RetroScope_UpdateRunStatus(DisplayRunning);
+      }
     }
 
     uint32_t SampleRateTick = HAL_GetTick();
@@ -598,7 +645,8 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
 
   // Read once; unsupported modes use Auto.
   uint32_t TriggerMode = RequestedTriggerMode;
-  if (TriggerMode != ADC_TRIGGER_MODE_NORMAL) {
+  if (TriggerMode != ADC_TRIGGER_MODE_NORMAL &&
+      TriggerMode != ADC_TRIGGER_MODE_SINGLE) {
     TriggerMode = ADC_TRIGGER_MODE_AUTO;
   }
 
@@ -647,12 +695,21 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
   // Acquisition status updates even when Normal holds the last snapshot.
   ActiveTriggerMode = TriggerMode;
   TriggerWaiting =
-      (TriggerMode == ADC_TRIGGER_MODE_NORMAL && triggerFound == 0U)
+      (triggerFound == 0U &&
+       (TriggerMode == ADC_TRIGGER_MODE_NORMAL ||
+        (TriggerMode == ADC_TRIGGER_MODE_SINGLE &&
+         SingleState == SINGLE_STATE_ARMED)))
           ? 1U
           : 0U;
 
-  // Normal publishes only triggered captures; Auto also allows fallback.
-  if (triggerFound != 0U || TriggerMode == ADC_TRIGGER_MODE_AUTO) {
+  // Single accepts a triggered capture only while explicitly armed.
+  uint8_t PublishCapture =
+      (TriggerMode == ADC_TRIGGER_MODE_AUTO ||
+       (TriggerMode == ADC_TRIGGER_MODE_NORMAL && triggerFound != 0U) ||
+       (TriggerMode == ADC_TRIGGER_MODE_SINGLE &&
+        SingleState == SINGLE_STATE_ARMED && triggerFound != 0U));
+
+  if (PublishCapture != 0U) {
     if (triggerFound == 0U) {
       triggerIndex = 0U;
     }
@@ -669,6 +726,10 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples) {
     SnapshotFrequencyHz = AdcFrequencyHz;
     SnapshotFrequencyValid = (AdcFrequencyValid != 0U) ? 1U : 0U;
     AdcSnapshotCount++;
+
+    if (TriggerMode == ADC_TRIGGER_MODE_SINGLE) {
+      SingleState = SINGLE_STATE_CAPTURED;
+    }
   }
 
   uint32_t ElapsedCycles = DWT->CYCCNT - StartCycles;
