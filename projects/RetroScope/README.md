@@ -15,9 +15,9 @@ An STM32F407G-DISC1 oscilloscope prototype built in C with STM32 HAL and STM32Cu
 
 DMA callbacks validate the source half, copy it into an available software capture buffer, and publish it. The main loop processes that protected capture before releasing it. Occupied-buffer drops and rejected unsafe captures have separate counters.
 
-Selectable rising- or falling-edge triggering selects a 401-sample snapshot. The adjustable trigger center is constrained to 64–4031 ADC counts, leaving room for hysteresis thresholds 64 counts below and above it. If no qualifying edge fits the complete display window, the snapshot starts at the beginning of the capture. Frequency detection uses hysteresis at raw ADC counts 1984 and 2112 across the 802-sample capture. Voltage extrema and Vpp use the 401-sample snapshot and an assumed, uncalibrated 3.3 V reference.
+Selectable rising- or falling-edge triggering selects a 401-sample snapshot. The adjustable trigger center is constrained to 64–4031 ADC counts, leaving room for hysteresis thresholds 64 counts below and above it. Auto mode uses the beginning of the capture when no qualifying edge fits the complete display window. Normal mode publishes only triggered snapshots. Single mode publishes one triggered snapshot per accepted arm request and protects it until its frame finishes. Frequency detection uses hysteresis at raw ADC counts 1984 and 2112 across the 802-sample capture. Voltage extrema and Vpp use the 401-sample snapshot and an assumed, uncalibrated 3.3 V reference.
 
-The renderer draws at most one strip per main-loop pass so acquisition can be serviced between strips. Frequency and Vpp text update between frames and only redraw when the rounded result changes.
+The renderer draws at most one strip per main-loop pass so acquisition can be serviced between strips. Frequency and Vpp text update between frames and only redraw when the rounded result changes. Frequency is saved with the accepted snapshot and copied with the waveform selected for display; live ADC frequency diagnostics may therefore differ from the held LCD reading. Single forces a measurement-label update after its frame completes, before automatically stopping.
 
 `RequestedTimebaseUs` selects 4000 or 2000 microseconds per division through the debugger. Unsupported values apply the 4 ms/div fallback. The 2 ms/div view repeats samples horizontally; acquisition remains at 10 kHz. Voltage measurements still cover the full snapshot, including samples outside the zoomed view.
 
@@ -27,6 +27,9 @@ Settings are currently changed through debugger expressions; there are no physic
 
 | Setting | Supported values | Behavior |
 |---|---|---|
+| `RequestedRun` | `0`, nonzero | Stop or run display updates; acquisition continues. |
+| `RequestedTriggerMode` | `0`, `1`, `2` | Auto, Normal, Single; unsupported values (for example `3`) use Auto. |
+| `RequestedSingleArm` | Write `1` | Request a Single capture; main clears the request when handled. |
 | `RequestedTimebaseUs` | `4000`, `2000` | 4 or 2 ms/div; other values use 4 ms/div. |
 | `RequestedVerticalScale` | `0`, `1` | Full ADC range (about 0.66 V/div) or 1 V/div; other values use full range. |
 | `RequestedTriggerEdge` | `0`, `1` | Rising or falling; other values use rising. |
@@ -34,7 +37,25 @@ Settings are currently changed through debugger expressions; there are no physic
 
 The header shows the effective trigger direction and estimated center voltage. A cyan arrow outside the grid marks that center using the current vertical scale. The actual detection thresholds are offset from the center by the hysteresis amount.
 
-`AUTO` indicates automatic fallback operation. `TRIG` means a qualifying edge was found for the displayed snapshot; `FREE` means the fallback window was used. These indicators do not establish calibration or signal quality. Frequency detection keeps its independent, fixed thresholds when the waveform trigger level changes.
+The mode label shows `AUTO`, `NORM`, or `SNGL`. `TRIG` means a qualifying edge was found for the displayed snapshot; `FREE` means Auto used the fallback window. `WAIT` indicates that Normal or armed Single is waiting for a qualifying capture while the previous waveform remains visible. Green `RUN` and red `STOP` describe display updates, not whether the ADC/DMA is running. These indicators do not establish calibration or signal quality. Frequency detection keeps its independent, fixed thresholds when the waveform trigger level changes.
+
+### Run/Stop and Normal mode
+
+Setting `RequestedRun = 0` lets an active frame finish and holds the display. Acquisition and processing continue. Setting it back to `1` resumes display updates. In Normal mode, no new snapshot is published without a qualifying trigger, so the previous waveform and its selected measurements remain available while `WAIT` is shown.
+
+A final triggered capture can contain pulses followed by a flat tail when PWM is disabled partway through acquisition. Because processing continues during Stop, that capture may remain pending and appear on resume. A stationary pulse-and-tail trace under `NORM / WAIT` is consistent with holding this final capture; it is not evidence of Auto fallback. Its frequency describes detected edges in the saved 802-sample capture, not the present constant-low input.
+
+### Single capture
+
+1. Set `RequestedTriggerMode = 2`.
+2. Write `RequestedSingleArm = 1`. At a frame boundary, an accepted request skips older pending display snapshots, arms Single, and sets `RequestedRun = 1`.
+3. With no qualifying trigger, the previous waveform remains visible under `SNGL / WAIT`.
+4. One qualifying capture is published and protected from subsequent Single captures. Its frame is drawn and its measurement labels are refreshed, then `RequestedRun` becomes `0` and the header shows `STOP`.
+5. Write `RequestedSingleArm = 1` again to rearm. Setting Run alone does not arm Single.
+
+The internal sequence is IDLE → ARMED → CAPTURED → RENDERING → IDLE. An arm request is accepted only if Single is idle when the request is handled. Requests are handled between frames; a write during rendering may remain pending until that frame finishes. Rapid or repeated arm writes are not part of the reported hardware validation.
+
+Setting `RequestedRun = 0` or leaving Single mode cancels an unfinished Single operation. Pending undisplayed snapshots are skipped; an already active frame still finishes. After automatic Stop, selecting another mode does not itself resume the display: set `RequestedRun = 1` as needed.
 
 ## Open and build
 
@@ -60,15 +81,30 @@ The following were reported passing by the user with the on-board PWM test conne
 - With trigger center 2048, live TIM3 CCR1 switching 2500 → 0 → 2500 produced square wave → low line → square wave, frequency 200 Hz → unavailable → 200 Hz, and status TRIG → FREE → TRIG.
 - Zero unsafe-capture and occupied-buffer drop counts during the reported uninterrupted normal runs.
 
+### Run/Stop and trigger-mode checks (2026-11-22 checkpoint)
+
+The user reported these checks passing on hardware:
+
+| Check | Observed result |
+|---|---|
+| Run/Stop with PWM changed while stopped | Display and labels held; resuming updated them; RUN/STOP text switched cleanly. |
+| Normal, PWM 2500 → 0 → 2500 in TIM3 CCR1 | TRIG → WAIT → TRIG; held waveform and measurements recovered when PWM returned. |
+| Normal with Stop and resume after PWM removal | Final pulse-and-flat-tail capture remained stationary under WAIT; restoring PWM resumed full square-wave updates. |
+| Single with PWM present | One capture and its measurements displayed, then automatic STOP. |
+| Single armed with CCR1 = 0 | WAIT persisted; restoring CCR1 = 2500 produced a capture and automatic STOP. |
+| Cancel armed Single with Run = 0 | Display stayed stopped after PWM returned; explicit rearm captured successfully. |
+| Leave Single while waiting | Auto resumed fallback display without an unintended automatic stop. |
+| Unsupported mode value 3 | AUTO/TRIG → AUTO/FREE → AUTO/TRIG as PWM was removed and restored. |
+
+Clean builds and zero capture-drop/unsafe-capture counts were reported during the requested uninterrupted test runs. These are user-observed hardware results, not an exhaustive automated state-transition test suite.
+
 These checks preserve normal operation; they do not characterize noise rejection, absolute accuracy, all signal shapes, or all sampling conditions.
 
 ## Roadmap
 
-First-version milestones:
+Completed first-version milestones: display Run/Stop, Normal triggering, and explicitly armed Single capture.
 
-1. Run/Stop with waveform and displayed measurements held together.
-2. Normal and Single trigger modes.
-3. Physical controls for settings currently changed through the debugger.
+Next: physical controls for settings currently changed through the debugger.
 
 Later milestones: pre-trigger viewing, rendering performance, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
 
