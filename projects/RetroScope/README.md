@@ -1,6 +1,6 @@
 # RetroScope
 
-An STM32F407G-DISC1 oscilloscope prototype built in C with STM32 HAL and STM32CubeIDE. This project began as HAL fundamentals practice and now lives under `projects/RetroScope`.
+RetroScope is an STM32F407G-DISC1 oscilloscope prototype built in C with STM32 HAL and STM32CubeIDE. The project began as HAL fundamentals practice and now lives under `projects/RetroScope`.
 
 ## Hardware and current configuration
 
@@ -10,6 +10,9 @@ An STM32F407G-DISC1 oscilloscope prototype built in C with STM32 HAL and STM32Cu
 - TIM3 CH1 on PB4 supplies a nominal 200 Hz, 50% duty-cycle test signal.
 - Test connection: PB4 through a 1 kΩ resistor to PA0 on the same board.
 - Display wiring: PA4 CS, PA5 SCK, PA7 MOSI, PB0 reset, PB1 data/command.
+- Run/Stop pushbutton: PE7 to GND, generated label `RUN_STOP_BTN`.
+- Mode pushbutton: PE8 to GND, generated label `MODE_BTN`.
+- Both buttons are normally open inputs with internal pull-ups: released = high, pressed = low. They share board GND; no external pull-up is required for this setup. Use contacts that connect only when pressed, and disconnect power before changing wiring.
 
 ## Architecture
 
@@ -23,7 +26,32 @@ The renderer draws at most one strip per main-loop pass so acquisition can be se
 
 ## Display controls
 
-Settings are currently changed through debugger expressions; there are no physical controls yet.
+Run/Stop, Single arming/cancellation, and trigger-mode selection have physical buttons. Timebase, vertical scale, trigger edge, and trigger level still use debugger expressions.
+
+### Physical buttons
+
+| Button | Context | Action on one press |
+|---|---|---|
+| PE7 Run/Stop | Auto or Normal | Toggle display Run/Stop. |
+| PE7 Run/Stop | Single idle | Arm one capture; accepted arming resumes the display. |
+| PE7 Run/Stop | Single armed, captured, or rendering | Request Stop and cancel the unfinished Single operation; an active frame still finishes. |
+| PE8 Mode | Any mode | Cycle AUTO → NORM → SNGL → AUTO, preserving the requested Run/Stop state. |
+
+Selecting Single does not arm it. Press Run/Stop separately to arm. Changing modes clears any pending arm request, and leaving Single cancels an unfinished Single operation. After a Single capture automatically stops, use Mode to select Auto or Normal, then Run/Stop to resume continuous display updates.
+
+The mode label updates between frames even while stopped; the waveform and measurement labels remain held. If both debounced press events arrive in the same main-loop pass, Mode takes priority and the Run/Stop event is consumed without action. This is a same-pass rule, not a general simultaneous-button or chord detector.
+
+### Input implementation
+
+- [`Core/Src/gpio.c`](Core/Src/gpio.c): CubeMX-generated PE7/PE8 input and pull-up configuration.
+- [`Core/Src/retroscope_input.c`](Core/Src/retroscope_input.c) and [`Core/Inc/retroscope_input.h`](Core/Inc/retroscope_input.h): main-loop polling and independent debounce state for each button.
+- [`Core/Src/main.c`](Core/Src/main.c): maps press events to Run/Stop, Single, and mode-selection actions.
+
+Each input accepts a transition after its sampled reading has remained unchanged for at least 30 ms. Both press and release are debounced. Only an accepted low transition generates a press event; holding a button does not repeat, and releasing does not generate an action. The first poll adopts the current state without an event, so a button held through startup must be released and pressed again to act. No button interrupt or blocking debounce delay is used. Response time also depends on main-loop polling and completion of an active frame; 30 ms is not a guaranteed end-to-end latency.
+
+### Debugger settings
+
+Debugger controls remain available for testing and for settings without physical controls.
 
 | Setting | Supported values | Behavior |
 |---|---|---|
@@ -47,13 +75,13 @@ A final triggered capture can contain pulses followed by a flat tail when PWM is
 
 ### Single capture
 
-1. Set `RequestedTriggerMode = 2`.
-2. Write `RequestedSingleArm = 1`. At a frame boundary, an accepted request skips older pending display snapshots, arms Single, and sets `RequestedRun = 1`.
+1. Select `SNGL` with Mode, or set `RequestedTriggerMode = 2`.
+2. Press Run/Stop while Single is idle, or write `RequestedSingleArm = 1`. At a frame boundary, an accepted request skips older pending display snapshots, arms Single, and sets `RequestedRun = 1`.
 3. With no qualifying trigger, the previous waveform remains visible under `SNGL / WAIT`.
 4. One qualifying capture is published and protected from subsequent Single captures. Its frame is drawn and its measurement labels are refreshed, then `RequestedRun` becomes `0` and the header shows `STOP`.
-5. Write `RequestedSingleArm = 1` again to rearm. Setting Run alone does not arm Single.
+5. Press Run/Stop again, or write `RequestedSingleArm = 1`, to rearm. Setting Run alone does not arm Single.
 
-The internal sequence is IDLE → ARMED → CAPTURED → RENDERING → IDLE. An arm request is accepted only if Single is idle when the request is handled. Requests are handled between frames; a write during rendering may remain pending until that frame finishes. Rapid or repeated arm writes are not part of the reported hardware validation.
+The internal sequence is IDLE → ARMED → CAPTURED → RENDERING → IDLE. An arm request is accepted only if Single is idle when the request is handled. Requests are handled between frames; a write during rendering may remain pending until that frame finishes. Rapid or repeated arm writes have not yet been validated on hardware.
 
 Setting `RequestedRun = 0` or leaving Single mode cancels an unfinished Single operation. Pending undisplayed snapshots are skipped; an already active frame still finishes. After automatic Stop, selecting another mode does not itself resume the display: set `RequestedRun = 1` as needed.
 
@@ -65,13 +93,13 @@ The project has been re-imported into the existing CubeIDE workspace after reloc
 
 ## Validation and limits
 
-User hardware checks before relocation confirmed 100 Hz and 200 Hz measurements, constant-low invalid frequency, live PWM-to-constant-to-PWM label recovery, estimated voltage conversion, hysteresis operation with the clean test signal, and 4/2/4 ms/div switching and invalid-setting fallback. Incremental rendering eliminated the observed capture drops in the tested uninterrupted 200 Hz runs. A deliberate debugger pause exercised capture rejection and recovery.
+Hardware checks before relocation confirmed 100 Hz and 200 Hz measurements, constant-low invalid frequency, live PWM-to-constant-to-PWM label recovery, estimated voltage conversion, hysteresis operation with the clean test signal, and 4/2/4 ms/div switching and invalid-setting fallback. Incremental rendering eliminated the previously observed capture drops during uninterrupted 200 Hz tests. A deliberate debugger pause exercised capture rejection and recovery.
 
-Full-height 200 Hz waveform frames were observed around 117 ms; incremental rendering improves acquisition responsiveness, not the total SPI transfer time. This is not a calibrated instrument: sampling and the test PWM share a clock source, full-scale ADC readings may be saturated, and absolute accuracy and operating limits are not characterized. The board input has no oscilloscope-grade protection or attenuation; the current setup is for controlled board-level experiments.
+Full-height 200 Hz waveform frames were measured around 117 ms; incremental rendering improves acquisition responsiveness, not the total SPI transfer time. This is not a calibrated instrument: sampling and the test PWM share a clock source, full-scale ADC readings may be saturated, and absolute accuracy and operating limits are not characterized. The board input has no oscilloscope-grade protection or attenuation; the current setup is for controlled board-level experiments.
 
-### Reported hardware checks after relocation
+### Hardware checks after relocation
 
-The following were reported passing by the user with the on-board PWM test connection and clean IDE builds:
+The following checks passed with the on-board PWM test connection and clean IDE builds:
 
 - Full-range / 1 V/div switching and unsupported vertical-scale fallback.
 - Rising / falling / rising trigger selection, plus unsupported edge value `2` falling back to rising.
@@ -79,11 +107,11 @@ The following were reported passing by the user with the on-board PWM test conne
 - Boundary requests 0 and 4095; effective labels 0.05 and 3.25 V. At the upper limit the waveform drifted; reliable endpoint triggering is not claimed.
 - Marker movement, clean erasure, and alignment under both vertical scales.
 - With trigger center 2048, live TIM3 CCR1 switching 2500 → 0 → 2500 produced square wave → low line → square wave, frequency 200 Hz → unavailable → 200 Hz, and status TRIG → FREE → TRIG.
-- Zero unsafe-capture and occupied-buffer drop counts during the reported uninterrupted normal runs.
+- Zero unsafe-capture and occupied-buffer drop counts during uninterrupted normal runs.
 
 ### Run/Stop and trigger-mode checks (2026-11-22 checkpoint)
 
-The user reported these checks passing on hardware:
+Hardware testing confirmed the following behaviors:
 
 | Check | Observed result |
 |---|---|
@@ -96,15 +124,32 @@ The user reported these checks passing on hardware:
 | Leave Single while waiting | Auto resumed fallback display without an unintended automatic stop. |
 | Unsupported mode value 3 | AUTO/TRIG → AUTO/FREE → AUTO/TRIG as PWM was removed and restored. |
 
-Clean builds and zero capture-drop/unsafe-capture counts were reported during the requested uninterrupted test runs. These are user-observed hardware results, not an exhaustive automated state-transition test suite.
+Builds completed cleanly, and capture-drop/unsafe-capture counts remained zero during the uninterrupted test runs. Validation consists of manual hardware checks; an exhaustive automated state-transition test suite has not been implemented.
+
+### Physical-button checks (2026-11-22 checkpoint)
+
+The following hardware checks passed after clean builds:
+
+| Check | Observed result |
+|---|---|
+| PE7 and PE8 raw input readings | Released → pressed → released gave 1 → 0 → 1 independently. |
+| Run/Stop presses and two-second hold | One action per press; no repeated toggle while held and no action on release. |
+| Run/Stop in Single | Arm, cancel a wait, rearm, capture, and automatic Stop behaved as intended. |
+| Mode while stopped | NORM → SNGL → AUTO labels changed while STOP and the frozen waveform were preserved. |
+| Mode held for two seconds | One mode change; no repeat while held or on release. |
+| Physical Single selection | Selecting SNGL did not automatically capture and stop; Run/Stop armed each capture. |
+| Mode change while Single waited with PWM low | Returned to AUTO/FREE and continued RUN; restoring PWM returned AUTO/TRIG. |
+| Each button held through reset, tested separately | No startup action or release action; the next press performed its normal action. |
+
+Capture-drop and unsafe-capture counts remained zero during uninterrupted Run/Stop testing. Same-pass button-event priority, rapid button chords, minimum press duration, and cancellation at every possible point during rendering have not been separately characterized.
 
 These checks preserve normal operation; they do not characterize noise rejection, absolute accuracy, all signal shapes, or all sampling conditions.
 
 ## Roadmap
 
-Completed first-version milestones: display Run/Stop, Normal triggering, and explicitly armed Single capture.
+Completed first-version milestones: display Run/Stop, Normal triggering, explicitly armed Single capture, and two physical buttons for Run/Stop/Single control and trigger-mode selection.
 
-Next: physical controls for settings currently changed through the debugger.
+Next: physical controls for timebase, voltage scale, and trigger level; trigger-edge selection also remains debugger-controlled.
 
 Later milestones: pre-trigger viewing, rendering performance, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
 
