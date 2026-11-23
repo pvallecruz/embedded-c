@@ -64,11 +64,11 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : RUN_STOP_BTN_Pin */
-  GPIO_InitStruct.Pin = RUN_STOP_BTN_Pin;
+  /*Configure GPIO pins : RUN_STOP_BTN_Pin MODE_BTN_Pin */
+  GPIO_InitStruct.Pin = RUN_STOP_BTN_Pin|MODE_BTN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(RUN_STOP_BTN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
 }
 

@@ -13,6 +13,7 @@
 // Call regularly from the main loop.
 // Returns 1 once per debounced press, otherwise 0.
 uint8_t RetroScope_InputPollRunStop(void);
+uint8_t RetroScope_InputPollMode(void);
 
 
 

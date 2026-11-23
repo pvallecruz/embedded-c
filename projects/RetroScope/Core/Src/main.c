@@ -333,7 +333,24 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    if (RetroScope_InputPollRunStop() != 0U) {
+    uint8_t RunStopPressed = RetroScope_InputPollRunStop();
+    uint8_t ModePressed = RetroScope_InputPollMode();
+
+    // If both events arrive in this pass, mode selection takes priority.
+    if (ModePressed != 0U) {
+      uint32_t Mode = RequestedTriggerMode;
+
+      if (Mode == ADC_TRIGGER_MODE_AUTO) {
+        RequestedTriggerMode = ADC_TRIGGER_MODE_NORMAL;
+      } else if (Mode == ADC_TRIGGER_MODE_NORMAL) {
+        RequestedTriggerMode = ADC_TRIGGER_MODE_SINGLE;
+      } else {
+        RequestedTriggerMode = ADC_TRIGGER_MODE_AUTO;
+      }
+
+      // A mode change must not carry an old arm request into Single.
+      RequestedSingleArm = 0U;
+    } else if (RunStopPressed != 0U) {
       if (RequestedTriggerMode == ADC_TRIGGER_MODE_SINGLE) {
         if (SingleState == SINGLE_STATE_IDLE) {
           RequestedSingleArm = 1U;
@@ -397,11 +414,11 @@ int main(void)
 
       RetroScope_UpdateRunStatus(DisplayRunning);
 
-      if (DisplayRunning != 0U) {
-        RetroScope_UpdateTriggerMode(ActiveTriggerMode);
-        if (TriggerWaiting != 0U) {
-          RetroScope_UpdateTriggerStatus(0U, 1U);
-        }
+      // Show the selected mode even while the waveform is stopped.
+      RetroScope_UpdateTriggerMode(RequestedTriggerMode);
+
+      if (DisplayRunning != 0U && TriggerWaiting != 0U) {
+        RetroScope_UpdateTriggerStatus(0U, 1U);
       }
     }
 

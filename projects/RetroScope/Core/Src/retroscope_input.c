@@ -15,6 +15,11 @@ static GPIO_PinState RunStopStable = GPIO_PIN_SET;
 static uint32_t RunStopChangedTick = 0U;
 static uint8_t RunStopInitialized = 0U;
 
+static GPIO_PinState ModeLastRaw = GPIO_PIN_SET;
+static GPIO_PinState ModeStable = GPIO_PIN_SET;
+static uint32_t ModeChangedTick = 0U;
+static uint8_t ModeInitialized = 0U;
+
 uint8_t RetroScope_InputPollRunStop(void) {
   GPIO_PinState Raw =
       HAL_GPIO_ReadPin(RUN_STOP_BTN_GPIO_Port, RUN_STOP_BTN_Pin);
@@ -41,6 +46,38 @@ uint8_t RetroScope_InputPollRunStop(void) {
 
     // Active-low button: report only the accepted press.
     if (RunStopStable == GPIO_PIN_RESET) {
+      return 1U;
+    }
+  }
+
+  return 0U;
+}
+
+uint8_t RetroScope_InputPollMode(void) {
+  GPIO_PinState Raw =
+      HAL_GPIO_ReadPin(MODE_BTN_GPIO_Port, MODE_BTN_Pin);
+  uint32_t Now = HAL_GetTick();
+
+  // Adopt the initial state without generating a press event.
+  if (ModeInitialized == 0U) {
+    ModeLastRaw = Raw;
+    ModeStable = Raw;
+    ModeChangedTick = Now;
+    ModeInitialized = 1U;
+    return 0U;
+  }
+
+  // Restart the debounce interval whenever the raw reading changes.
+  if (Raw != ModeLastRaw) {
+    ModeLastRaw = Raw;
+    ModeChangedTick = Now;
+  }
+
+  if (Raw != ModeStable &&
+      (uint32_t)(Now - ModeChangedTick) >= BUTTON_DEBOUNCE_MS) {
+    ModeStable = Raw;
+
+    if (ModeStable == GPIO_PIN_RESET) {
       return 1U;
     }
   }
