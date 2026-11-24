@@ -47,6 +47,8 @@
 #define ADC_DISPLAY_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 #define ADC_TRIGGER_LEVEL 2048U
 #define ADC_TRIGGER_HYSTERESIS 64U
+// Trigger-center adjustment per accepted button press, in ADC counts.
+#define ADC_TRIGGER_LEVEL_STEP 128U
 #define ADC_TRIGGER_EDGE_RISING 0U
 #define ADC_TRIGGER_EDGE_FALLING 1U
 #define ADC_TRIGGER_MODE_AUTO 0U
@@ -389,6 +391,34 @@ int main(void)
             (DecreasePressed != 0U)
                 ? RETROSCOPE_VERTICAL_FULL_RANGE
                 : RETROSCOPE_VERTICAL_1_V_DIV;
+      } else if (SelectedSetting == RETROSCOPE_SETTING_TRIGGER_LEVEL) {
+        const uint32_t MinLevel = ADC_TRIGGER_HYSTERESIS;
+        const uint32_t MaxLevel = ADC_MAX_COUNT - ADC_TRIGGER_HYSTERESIS;
+        uint32_t Level = RequestedTriggerLevel;
+
+        // Normalize debugger-written values before applying a step.
+        if (Level < MinLevel) {
+          Level = MinLevel;
+        } else if (Level > MaxLevel) {
+          Level = MaxLevel;
+        }
+
+        if (DecreasePressed != 0U) {
+          Level = (Level - MinLevel >= ADC_TRIGGER_LEVEL_STEP)
+                      ? Level - ADC_TRIGGER_LEVEL_STEP
+                      : MinLevel;
+        } else {
+          Level = (MaxLevel - Level >= ADC_TRIGGER_LEVEL_STEP)
+                      ? Level + ADC_TRIGGER_LEVEL_STEP
+                      : MaxLevel;
+        }
+
+        RequestedTriggerLevel = Level;
+      } else if (SelectedSetting == RETROSCOPE_SETTING_TRIGGER_EDGE) {
+        RequestedTriggerEdge =
+            (DecreasePressed != 0U)
+                ? ADC_TRIGGER_EDGE_RISING
+                : ADC_TRIGGER_EDGE_FALLING;
       }
     }
 
