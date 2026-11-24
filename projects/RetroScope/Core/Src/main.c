@@ -151,6 +151,8 @@ static uint32_t ActiveTriggerMode = ADC_TRIGGER_MODE_AUTO;
 static uint8_t TriggerWaiting = 0U;
 // Single capture progresses from armed to captured to rendering.
 static uint8_t SingleState = SINGLE_STATE_IDLE;
+// Selected setting for the shared decrease/increase buttons.
+static uint32_t SelectedSetting = RETROSCOPE_SETTING_TIMEBASE;
 
 
 
@@ -335,6 +337,9 @@ int main(void)
 
     uint8_t RunStopPressed = RetroScope_InputPollRunStop();
     uint8_t ModePressed = RetroScope_InputPollMode();
+    uint8_t SelectPressed = RetroScope_InputPollSelect();
+    uint8_t DecreasePressed = RetroScope_InputPollDecrease();
+    uint8_t IncreasePressed = RetroScope_InputPollIncrease();
 
     // If both events arrive in this pass, mode selection takes priority.
     if (ModePressed != 0U) {
@@ -360,6 +365,30 @@ int main(void)
         }
       } else {
         RequestedRun = (RequestedRun != 0U) ? 0U : 1U;
+      }
+    }
+
+    if (SelectPressed != 0U) {
+      SelectedSetting++;
+
+      if (SelectedSetting >= RETROSCOPE_SETTING_COUNT) {
+        SelectedSetting = RETROSCOPE_SETTING_TIMEBASE;
+      }
+    }
+
+    // Ignore adjustment when SELECT or both adjustment events arrive together.
+    if (SelectPressed == 0U &&
+        DecreasePressed != IncreasePressed) {
+      if (SelectedSetting == RETROSCOPE_SETTING_TIMEBASE) {
+        RequestedTimebaseUs =
+            (DecreasePressed != 0U)
+                ? RETROSCOPE_TIMEBASE_2_MS
+                : RETROSCOPE_TIMEBASE_4_MS;
+      } else if (SelectedSetting == RETROSCOPE_SETTING_VERTICAL_SCALE) {
+        RequestedVerticalScale =
+            (DecreasePressed != 0U)
+                ? RETROSCOPE_VERTICAL_FULL_RANGE
+                : RETROSCOPE_VERTICAL_1_V_DIV;
       }
     }
 
@@ -416,6 +445,8 @@ int main(void)
 
       // Show the selected mode even while the waveform is stopped.
       RetroScope_UpdateTriggerMode(RequestedTriggerMode);
+
+      RetroScope_UpdateSelectedSetting(SelectedSetting);
 
       if (DisplayRunning != 0U && TriggerWaiting != 0U) {
         RetroScope_UpdateTriggerStatus(0U, 1U);

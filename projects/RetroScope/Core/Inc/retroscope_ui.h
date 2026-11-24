@@ -15,6 +15,11 @@
 #define RETROSCOPE_TIMEBASE_4_MS 4000U
 #define RETROSCOPE_VERTICAL_FULL_RANGE 0U
 #define RETROSCOPE_VERTICAL_1_V_DIV 1U
+#define RETROSCOPE_SETTING_TIMEBASE 0U
+#define RETROSCOPE_SETTING_VERTICAL_SCALE 1U
+#define RETROSCOPE_SETTING_TRIGGER_LEVEL 2U
+#define RETROSCOPE_SETTING_TRIGGER_EDGE 3U
+#define RETROSCOPE_SETTING_COUNT 4U
 
 // Debugger-visible rendering diagnostic.
 extern volatile uint16_t StripsDrawn;
@@ -39,5 +44,6 @@ void RetroScope_UpdateTriggerMarker(uint32_t TriggerLevel,
 void RetroScope_UpdateTriggerStatus(uint8_t Triggered, uint8_t Waiting);
 void RetroScope_UpdateRunStatus(uint8_t Running);
 void RetroScope_UpdateTriggerMode(uint32_t Mode);
+void RetroScope_UpdateSelectedSetting(uint32_t Setting);
 
 #endif /* INC_RETROSCOPE_UI_H_ */

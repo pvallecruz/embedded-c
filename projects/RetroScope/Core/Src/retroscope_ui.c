@@ -100,7 +100,10 @@ void RetroScope_DrawGrid(void) {
 
 void RetroScope_DrawLabels(void) {
   // Header title
-  ST7796_DrawString(12, 10, "RETROSCOPE", ST7796_WHITE, 2);
+  ST7796_DrawString(12, 6, "RETROSCOPE", ST7796_WHITE, 2);
+
+  // Initial selection for the shared adjustment buttons.
+  ST7796_DrawString(12, 25, "SEL: TIME", ST7796_CYAN, 1);
 
   // Default trigger direction.
   ST7796_DrawString(180, 10, "TRIG: RISE", ST7796_WHITE, 2);
@@ -127,6 +130,50 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(15, 298, "FREQ: -- HZ", ST7796_WHITE, 2);
   // Estimated peak-to-peak voltage; unavailable before the first capture.
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
+}
+
+void RetroScope_UpdateSelectedSetting(uint32_t Setting) {
+  static uint32_t PreviousSetting = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  if (Setting >= RETROSCOPE_SETTING_COUNT) {
+    Setting = RETROSCOPE_SETTING_TIMEBASE;
+  }
+
+  if (DisplayInitialized != 0U && Setting == PreviousSetting) {
+    return;
+  }
+
+  const char *Text;
+
+  switch (Setting) {
+    case RETROSCOPE_SETTING_VERTICAL_SCALE:
+      Text = "VOLTS";
+      break;
+
+    case RETROSCOPE_SETTING_TRIGGER_LEVEL:
+      Text = "LEVEL";
+      break;
+
+    case RETROSCOPE_SETTING_TRIGGER_EDGE:
+      Text = "EDGE";
+      break;
+
+    default:
+      Text = "TIME";
+      break;
+  }
+
+  // Preserve "SEL: " and replace only the setting name.
+  ST7796_FillRect(42, 25, 30, 7, UI_PANEL_COLOR);
+  ST7796_DrawString(42, 25, Text, ST7796_CYAN, 1);
+
+  PreviousSetting = Setting;
+  DisplayInitialized = 1U;
 }
 
 void RetroScope_UpdateRunStatus(uint8_t Running) {

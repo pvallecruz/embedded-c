@@ -67,6 +67,12 @@ void Error_Handler(void);
 #define RUN_STOP_BTN_GPIO_Port GPIOE
 #define MODE_BTN_Pin GPIO_PIN_8
 #define MODE_BTN_GPIO_Port GPIOE
+#define SELECT_BTN_Pin GPIO_PIN_9
+#define SELECT_BTN_GPIO_Port GPIOE
+#define DECREASE_BTN_Pin GPIO_PIN_10
+#define DECREASE_BTN_GPIO_Port GPIOE
+#define INCREASE_BTN_Pin GPIO_PIN_11
+#define INCREASE_BTN_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
 

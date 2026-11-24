@@ -10,42 +10,46 @@
 
 #define BUTTON_DEBOUNCE_MS 30U
 
-static GPIO_PinState RunStopLastRaw = GPIO_PIN_SET;
-static GPIO_PinState RunStopStable = GPIO_PIN_SET;
-static uint32_t RunStopChangedTick = 0U;
-static uint8_t RunStopInitialized = 0U;
+typedef struct {
+  GPIO_PinState LastRaw;
+  GPIO_PinState Stable;
+  uint32_t ChangedTick;
+  uint8_t Initialized;
+} RetroScope_ButtonState;
 
-static GPIO_PinState ModeLastRaw = GPIO_PIN_SET;
-static GPIO_PinState ModeStable = GPIO_PIN_SET;
-static uint32_t ModeChangedTick = 0U;
-static uint8_t ModeInitialized = 0U;
+static RetroScope_ButtonState RunStopButton = {0};
+static RetroScope_ButtonState ModeButton = {0};
+static RetroScope_ButtonState SelectButton = {0};
+static RetroScope_ButtonState DecreaseButton = {0};
+static RetroScope_ButtonState IncreaseButton = {0};
 
-uint8_t RetroScope_InputPollRunStop(void) {
-  GPIO_PinState Raw =
-      HAL_GPIO_ReadPin(RUN_STOP_BTN_GPIO_Port, RUN_STOP_BTN_Pin);
+static uint8_t RetroScope_InputPollButton(RetroScope_ButtonState *State,
+                                          GPIO_TypeDef *Port,
+                                          uint16_t Pin) {
+  GPIO_PinState Raw = HAL_GPIO_ReadPin(Port, Pin);
   uint32_t Now = HAL_GetTick();
 
   // Adopt the initial state without generating a press event.
-  if (RunStopInitialized == 0U) {
-    RunStopLastRaw = Raw;
-    RunStopStable = Raw;
-    RunStopChangedTick = Now;
-    RunStopInitialized = 1U;
+  if (State->Initialized == 0U) {
+    State->LastRaw = Raw;
+    State->Stable = Raw;
+    State->ChangedTick = Now;
+    State->Initialized = 1U;
     return 0U;
   }
 
   // Restart the debounce interval whenever the raw reading changes.
-  if (Raw != RunStopLastRaw) {
-    RunStopLastRaw = Raw;
-    RunStopChangedTick = Now;
+  if (Raw != State->LastRaw) {
+    State->LastRaw = Raw;
+    State->ChangedTick = Now;
   }
 
-  if (Raw != RunStopStable &&
-      (uint32_t)(Now - RunStopChangedTick) >= BUTTON_DEBOUNCE_MS) {
-    RunStopStable = Raw;
+  if (Raw != State->Stable &&
+      (uint32_t)(Now - State->ChangedTick) >= BUTTON_DEBOUNCE_MS) {
+    State->Stable = Raw;
 
     // Active-low button: report only the accepted press.
-    if (RunStopStable == GPIO_PIN_RESET) {
+    if (State->Stable == GPIO_PIN_RESET) {
       return 1U;
     }
   }
@@ -53,34 +57,32 @@ uint8_t RetroScope_InputPollRunStop(void) {
   return 0U;
 }
 
+uint8_t RetroScope_InputPollRunStop(void) {
+  return RetroScope_InputPollButton(&RunStopButton,
+                                    RUN_STOP_BTN_GPIO_Port,
+                                    RUN_STOP_BTN_Pin);
+}
+
 uint8_t RetroScope_InputPollMode(void) {
-  GPIO_PinState Raw =
-      HAL_GPIO_ReadPin(MODE_BTN_GPIO_Port, MODE_BTN_Pin);
-  uint32_t Now = HAL_GetTick();
+  return RetroScope_InputPollButton(&ModeButton,
+                                    MODE_BTN_GPIO_Port,
+                                    MODE_BTN_Pin);
+}
 
-  // Adopt the initial state without generating a press event.
-  if (ModeInitialized == 0U) {
-    ModeLastRaw = Raw;
-    ModeStable = Raw;
-    ModeChangedTick = Now;
-    ModeInitialized = 1U;
-    return 0U;
-  }
+uint8_t RetroScope_InputPollSelect(void) {
+  return RetroScope_InputPollButton(&SelectButton,
+                                    SELECT_BTN_GPIO_Port,
+                                    SELECT_BTN_Pin);
+}
 
-  // Restart the debounce interval whenever the raw reading changes.
-  if (Raw != ModeLastRaw) {
-    ModeLastRaw = Raw;
-    ModeChangedTick = Now;
-  }
+uint8_t RetroScope_InputPollDecrease(void) {
+  return RetroScope_InputPollButton(&DecreaseButton,
+                                    DECREASE_BTN_GPIO_Port,
+                                    DECREASE_BTN_Pin);
+}
 
-  if (Raw != ModeStable &&
-      (uint32_t)(Now - ModeChangedTick) >= BUTTON_DEBOUNCE_MS) {
-    ModeStable = Raw;
-
-    if (ModeStable == GPIO_PIN_RESET) {
-      return 1U;
-    }
-  }
-
-  return 0U;
+uint8_t RetroScope_InputPollIncrease(void) {
+  return RetroScope_InputPollButton(&IncreaseButton,
+                                    INCREASE_BTN_GPIO_Port,
+                                    INCREASE_BTN_Pin);
 }

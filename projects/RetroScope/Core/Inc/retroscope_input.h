@@ -14,6 +14,9 @@
 // Returns 1 once per debounced press, otherwise 0.
 uint8_t RetroScope_InputPollRunStop(void);
 uint8_t RetroScope_InputPollMode(void);
+uint8_t RetroScope_InputPollSelect(void);
+uint8_t RetroScope_InputPollDecrease(void);
+uint8_t RetroScope_InputPollIncrease(void);
 
 
 
