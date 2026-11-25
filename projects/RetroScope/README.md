@@ -12,7 +12,10 @@ RetroScope is an STM32F407G-DISC1 oscilloscope prototype built in C with STM32 H
 - Display wiring: PA4 CS, PA5 SCK, PA7 MOSI, PB0 reset, PB1 data/command.
 - Run/Stop pushbutton: PE7 to GND, generated label `RUN_STOP_BTN`.
 - Mode pushbutton: PE8 to GND, generated label `MODE_BTN`.
-- Both buttons are normally open inputs with internal pull-ups: released = high, pressed = low. They share board GND; no external pull-up is required for this setup. Use contacts that connect only when pressed, and disconnect power before changing wiring.
+- SELECT pushbutton: PE9 to GND, generated label `SELECT_BTN`.
+- Decrease (−) pushbutton: PE10 to GND, generated label `DECREASE_BTN`.
+- Increase (+) pushbutton: PE11 to GND, generated label `INCREASE_BTN`.
+- All five buttons are normally open inputs with internal pull-ups: released = high, pressed = low. They share board GND; no external pull-up is required for this setup. Use contacts that connect only when pressed, and disconnect power before changing wiring.
 
 ## Architecture
 
@@ -22,11 +25,11 @@ Selectable rising- or falling-edge triggering selects a 401-sample snapshot. The
 
 The renderer draws at most one strip per main-loop pass so acquisition can be serviced between strips. Frequency and Vpp text update between frames and only redraw when the rounded result changes. Frequency is saved with the accepted snapshot and copied with the waveform selected for display; live ADC frequency diagnostics may therefore differ from the held LCD reading. Single forces a measurement-label update after its frame completes, before automatically stopping.
 
-`RequestedTimebaseUs` selects 4000 or 2000 microseconds per division through the debugger. Unsupported values apply the 4 ms/div fallback. The 2 ms/div view repeats samples horizontally; acquisition remains at 10 kHz. Voltage measurements still cover the full snapshot, including samples outside the zoomed view.
+`RequestedTimebaseUs` selects 4000 or 2000 microseconds per division through the TIME controls or debugger. Unsupported values apply the 4 ms/div fallback. The 2 ms/div view repeats samples horizontally; acquisition remains at 10 kHz. Voltage measurements still cover the full snapshot, including samples outside the zoomed view.
 
 ## Display controls
 
-Run/Stop, Single arming/cancellation, and trigger-mode selection have physical buttons. Timebase, vertical scale, trigger edge, and trigger level still use debugger expressions.
+Five physical buttons control Run/Stop, Single arming/cancellation, trigger mode, timebase, vertical scale, trigger level, and trigger edge. Debugger expressions remain available for diagnostics and controlled tests.
 
 ### Physical buttons
 
@@ -36,22 +39,42 @@ Run/Stop, Single arming/cancellation, and trigger-mode selection have physical b
 | PE7 Run/Stop | Single idle | Arm one capture; accepted arming resumes the display. |
 | PE7 Run/Stop | Single armed, captured, or rendering | Request Stop and cancel the unfinished Single operation; an active frame still finishes. |
 | PE8 Mode | Any mode | Cycle AUTO → NORM → SNGL → AUTO, preserving the requested Run/Stop state. |
+| PE9 SELECT | Running or stopped | Cycle TIME → VOLTS → LEVEL → EDGE → TIME. |
+| PE10 Decrease (−) | Selected setting | Apply the decrease action listed below. |
+| PE11 Increase (+) | Selected setting | Apply the increase action listed below. |
 
 Selecting Single does not arm it. Press Run/Stop separately to arm. Changing modes clears any pending arm request, and leaving Single cancels an unfinished Single operation. After a Single capture automatically stops, use Mode to select Auto or Normal, then Run/Stop to resume continuous display updates.
 
 The mode label updates between frames even while stopped; the waveform and measurement labels remain held. If both debounced press events arrive in the same main-loop pass, Mode takes priority and the Run/Stop event is consumed without action. This is a same-pass rule, not a general simultaneous-button or chord detector.
 
+### Shared setting adjustment
+
+The header's `SEL:` indicator identifies the setting controlled by −/+. TIME is selected at startup. Selection changes do not alter the setting values.
+
+| Selection | Decrease (−) | Increase (+) |
+|---|---|---|
+| TIME | Set 2 ms/div. | Set 4 ms/div. |
+| VOLTS | Set full range, approximately 0.66 V/div. | Set 1.00 V/div. |
+| LEVEL | Subtract up to 128 ADC counts, stopping at 64. | Add up to 128 ADC counts, stopping at 4031. |
+| EDGE | Select rising-edge triggering. | Select falling-edge triggering. |
+
+Repeated TIME, VOLTS, or EDGE actions at the selected endpoint leave the value unchanged. LEVEL steps correspond to approximately 0.103 V with the assumed 3.3 V reference. Values written through the debugger are constrained to 64–4031 before a button step is applied; a partial final step lands exactly on the limit without wrapping. At the upper limit, the high hysteresis threshold reaches 4095, and triggering can become unstable if samples do not reliably reach full scale.
+
+If SELECT and an adjustment event arrive in the same main-loop pass, the selection advances and the adjustment is ignored. If both adjustment events arrive in the same pass, neither is applied. These rules do not guarantee suppression of physical button combinations whose debounced events arrive in different passes.
+
+While stopped, SELECT remains responsive and −/+ update requested settings, but the waveform, scale labels, trigger direction/voltage, and marker continue describing the held frame. Changes become visible when a new frame is displayed. In Single mode, rearm to apply pending changes to the next capture. In Normal mode, a new qualifying capture is required. There is currently no separate indicator showing that a requested value differs from the held frame's value.
+
 ### Input implementation
 
-- [`Core/Src/gpio.c`](Core/Src/gpio.c): CubeMX-generated PE7/PE8 input and pull-up configuration.
-- [`Core/Src/retroscope_input.c`](Core/Src/retroscope_input.c) and [`Core/Inc/retroscope_input.h`](Core/Inc/retroscope_input.h): main-loop polling and independent debounce state for each button.
-- [`Core/Src/main.c`](Core/Src/main.c): maps press events to Run/Stop, Single, and mode-selection actions.
+- [`Core/Src/gpio.c`](Core/Src/gpio.c): CubeMX-generated PE7–PE11 input and pull-up configuration.
+- [`Core/Src/retroscope_input.c`](Core/Src/retroscope_input.c) and [`Core/Inc/retroscope_input.h`](Core/Inc/retroscope_input.h): main-loop polling through one shared debounce helper, with a separate `RetroScope_ButtonState` instance for each button.
+- [`Core/Src/main.c`](Core/Src/main.c): maps press events to Run/Stop, Single, mode selection, setting selection, and bounded adjustments.
 
 Each input accepts a transition after its sampled reading has remained unchanged for at least 30 ms. Both press and release are debounced. Only an accepted low transition generates a press event; holding a button does not repeat, and releasing does not generate an action. The first poll adopts the current state without an event, so a button held through startup must be released and pressed again to act. No button interrupt or blocking debounce delay is used. Response time also depends on main-loop polling and completion of an active frame; 30 ms is not a guaranteed end-to-end latency.
 
 ### Debugger settings
 
-Debugger controls remain available for testing and for settings without physical controls.
+Debugger controls remain available for inspection and controlled testing alongside the physical controls.
 
 | Setting | Supported values | Behavior |
 |---|---|---|
@@ -61,7 +84,7 @@ Debugger controls remain available for testing and for settings without physical
 | `RequestedTimebaseUs` | `4000`, `2000` | 4 or 2 ms/div; other values use 4 ms/div. |
 | `RequestedVerticalScale` | `0`, `1` | Full ADC range (about 0.66 V/div) or 1 V/div; other values use full range. |
 | `RequestedTriggerEdge` | `0`, `1` | Rising or falling; other values use rising. |
-| `RequestedTriggerLevel` | ADC counts; default `2048` | Effective center is limited to 64–4031; the requested variable is not rewritten. |
+| `RequestedTriggerLevel` | ADC counts; default `2048` | Acquisition constrains the effective center to 64–4031 without rewriting the request; LEVEL button actions normalize and update the request. |
 
 The header shows the effective trigger direction and estimated center voltage. A cyan arrow outside the grid marks that center using the current vertical scale. The actual detection thresholds are offset from the center by the hysteresis amount.
 
@@ -143,13 +166,31 @@ The following hardware checks passed after clean builds:
 
 Capture-drop and unsafe-capture counts remained zero during uninterrupted Run/Stop testing. Same-pass button-event priority, rapid button chords, minimum press duration, and cancellation at every possible point during rendering have not been separately characterized.
 
+### Shared-control checks (2026-11-23–24 checkpoint)
+
+Hardware testing confirmed the following after clean builds:
+
+| Check | Observed result |
+|---|---|
+| PE9, PE10, and PE11 raw inputs | Each changed 1 → 0 → 1 independently; existing Run/Stop and Mode controls continued working. |
+| Shared debounce refactor | Run/Stop, Mode, hold behavior, independent-button operation, and Single capture retained their previous behavior. |
+| SELECT | TIME → VOLTS → LEVEL → EDGE → TIME; one advance per held press; selection remained responsive while stopped with no leftover characters. |
+| TIME −/+ | 2/4 ms/div views and labels matched; repeated endpoint presses did not wrap; requests made during Stop applied on resume. |
+| VOLTS −/+ | Full-range/1 V/div views, scale labels, and marker positions updated together; stopped views remained held until resume. |
+| LEVEL steps and hold | 2048 → 2176 → 2304 and return; one step per press; labels and marker followed the effective level. |
+| LEVEL bounds | A decrease from 100 reached 64; an increase from 4000 reached 4031; repeated outward presses stayed at the limits. At 3.25 V the waveform drifted, consistent with the previously observed endpoint limitation. |
+| EDGE −/+ | Rising/falling alignment and labels matched; repeated presses preserved the chosen edge; pending changes applied on resume. |
+| Single with pending trigger adjustments | Held waveform and labels remained unchanged while stopped; rearming applied the requested falling edge or increased level to the next completed capture. |
+
+The requested Auto-mode adjustment checks confirmed approximately 200 Hz, unchanged input amplitude, and zero capture-drop/unsafe-capture counts during uninterrupted runs. Full-range restoration and trigger-center restoration were included in the tests. Startup-held checks for the original PE7/PE8 buttons are documented above; equivalent startup tests for PE9–PE11 and same-pass adjustment-event conflicts have not been separately validated on hardware.
+
 These checks preserve normal operation; they do not characterize noise rejection, absolute accuracy, all signal shapes, or all sampling conditions.
 
 ## Roadmap
 
-Completed first-version milestones: display Run/Stop, Normal triggering, explicitly armed Single capture, and two physical buttons for Run/Stop/Single control and trigger-mode selection.
+Completed first-version milestones: display Run/Stop, Normal triggering, explicitly armed Single capture, and five physical buttons covering Run/Stop/Single control, mode selection, timebase, vertical scale, trigger level, and trigger edge.
 
-Next: physical controls for timebase, voltage scale, and trigger level; trigger-edge selection also remains debugger-controlled.
+Next: consider an indicator for requested settings that differ from the held waveform settings, with validation across Stop, Normal waiting, and Single capture.
 
 Later milestones: pre-trigger viewing, rendering performance, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
 
