@@ -23,7 +23,7 @@ DMA callbacks validate the source half, copy it into an available software captu
 
 Selectable rising- or falling-edge triggering selects a 401-sample snapshot. The adjustable trigger center is constrained to 64–4031 ADC counts, leaving room for hysteresis thresholds 64 counts below and above it. Auto mode uses the beginning of the capture when no qualifying edge fits the complete display window. Normal mode publishes only triggered snapshots. Single mode publishes one triggered snapshot per accepted arm request and protects it until its frame finishes. Frequency detection uses hysteresis at raw ADC counts 1984 and 2112 across the 802-sample capture. Voltage extrema and Vpp use the 401-sample snapshot and an assumed, uncalibrated 3.3 V reference.
 
-The renderer draws at most one strip per main-loop pass so acquisition can be serviced between strips. Frequency and Vpp text update between frames and only redraw when the rounded result changes. Frequency is saved with the accepted snapshot and copied with the waveform selected for display; live ADC frequency diagnostics may therefore differ from the held LCD reading. Single forces a measurement-label update after its frame completes, before automatically stopping.
+The renderer draws at most one 10-pixel-wide strip per main-loop pass so acquisition can be serviced between strips. Each changed strip covers the vertical bounds of both the previous and current waveform, preserving clean erasure. The final strip includes the rightmost endpoint. Pixel transfers use a static 1,024-byte staging buffer, sending up to 512 RGB565 pixels per blocking HAL SPI call; display drawing remains sequential in the main loop. Frequency and Vpp text update between frames and only redraw when the rounded result changes. Frequency is saved with the accepted snapshot and copied with the waveform selected for display; live ADC frequency diagnostics may therefore differ from the held LCD reading. Single forces a measurement-label update after its frame completes, before automatically stopping.
 
 `RequestedTimebaseUs` selects 4000 or 2000 microseconds per division through the TIME controls or debugger. Unsupported values apply the 4 ms/div fallback. The 2 ms/div view repeats samples horizontally; acquisition remains at 10 kHz. Voltage measurements still cover the full snapshot, including samples outside the zoomed view.
 
@@ -131,7 +131,7 @@ The project has been re-imported into the existing CubeIDE workspace after reloc
 
 Hardware checks before relocation confirmed 100 Hz and 200 Hz measurements, constant-low invalid frequency, live PWM-to-constant-to-PWM label recovery, estimated voltage conversion, hysteresis operation with the clean test signal, and 4/2/4 ms/div switching and invalid-setting fallback. Incremental rendering eliminated the previously observed capture drops during uninterrupted 200 Hz tests. A deliberate debugger pause exercised capture rejection and recovery.
 
-Full-height 200 Hz waveform frames were measured around 117 ms; incremental rendering improves acquisition responsiveness, not the total SPI transfer time. This is not a calibrated instrument: sampling and the test PWM share a clock source, full-scale ADC readings may be saturated, and absolute accuracy and operating limits are not characterized. The board input has no oscilloscope-grade protection or attenuation; the current setup is for controlled board-level experiments.
+The earlier 20-pixel-strip renderer measured approximately 117 ms for the 200 Hz test waveform. Narrower strips and larger SPI transfer batches reduced the observed 4 ms/div frame time to approximately 53 ms; the measurement conditions and limits are recorded below. This is not a calibrated instrument: sampling and the test PWM share a clock source, full-scale ADC readings may be saturated, and absolute accuracy and operating limits are not characterized. The board input has no oscilloscope-grade protection or attenuation; the current setup is for controlled board-level experiments.
 
 ### Hardware checks after relocation
 
@@ -214,6 +214,30 @@ Hardware testing confirmed the following after a clean build:
 
 Indicator placement and clean erasure were checked on the display. Vertical-scale fallback equivalence, trigger-limit equivalence, and multiple simultaneous pending settings are supported by the comparison logic but have not been separately hardware-validated for PEND.
 
+### Rendering performance checks (2026-11-27 checkpoint)
+
+Hardware measurements used the on-board nominal 200 Hz PWM signal at 50% duty cycle (`TIM3 CCR1 = 2500`), a trigger center of 2048, rising-edge Auto triggering, and full-range vertical scaling. Each configuration ran for approximately 30 seconds before the physical Run/Stop button held the display. The debugger remained running, allowing the active frame to finish before its counters were recorded.
+
+| Strip width | SPI staging buffer | Timebase | Pixels sent | Strips drawn | Frame time | Timed SPI transfers | Reported FPS |
+|---|---|---|---:|---:|---:|---:|---:|
+| 20 pixels | 128 bytes | 4 ms/div | 64,620 | 20 | 116.74 ms | 87.11 ms | 8.55 |
+| 20 pixels | 512 bytes | 4 ms/div | 64,600 | 20 | 99.80 ms | 71.68 ms | 10.10 |
+| 20 pixels | 1,024 bytes | 4 ms/div | 64,539 | 20 | 96.88 ms | 68.77 ms | 10.10 |
+| 10 pixels | 1,024 bytes | 4 ms/div | 33,120 | 37 | 53.46 ms | 36.41 ms | 12.50 |
+| 10 pixels | 1,024 bytes | 2 ms/div | 15,150 | 32 | 25.66 ms | 16.71 ms | 12.50 |
+
+The retained configuration uses 10-pixel strips and the 1,024-byte buffer. Compared with the initial 4 ms/div observation, frame time decreased by approximately 54%. Narrower strips reduced the area sent around square-wave transitions without suppressing sample changes. Larger transfer batches reduced HAL call overhead, with a smaller additional benefit from 512 to 1,024 bytes.
+
+Builds completed without warnings or errors. Hardware testing confirmed unchanged waveforms after the buffer changes and clean rendering at both timebases after narrowing the strips, with no missing segments or leftover pixels. Occupied-buffer drop and unsafe-capture counts remained zero in the recorded runs. These are individual completed-frame observations, not statistical averages or worst-case bounds; redraw work varies with the signal and noise. The broader trigger-mode and vertical-scale tests above predate this renderer optimization and were not repeated as part of this checkpoint.
+
+Measurement interpretation:
+
+- `PixelsDrawn` resets at frame start and accumulates waveform-strip pixel areas sent during that frame. Each RGB565 pixel uses two bytes; this counter excludes text updates and display commands.
+- `StripsDrawn` counts changed strips actually drawn, with up to 40 strips in the current 400-pixel grid. More strips can still mean fewer pixels sent.
+- `FrameTimeMs` covers the timed frame interval, including main-loop work between rendering steps. `SpiTransferMs` accumulates time inside the pixel-buffer `HAL_SPI_Transmit` calls, including polling overhead and interrupt time; it is not a pure wire-time measurement and excludes buffer preparation and address commands.
+- `ActualFPS` uses frame-start intervals, so it need not equal the reciprocal of the last recorded frame duration. At 10 kHz, an 802-sample capture arrives every 80.2 ms, giving approximately 12.47 fresh captures per second. The observed 12.5 FPS is consistent with that cadence and tick resolution; shorter rendering alone does not increase the acquisition rate.
+- While running, strip and pixel counters change during a frame. For a completed-frame comparison, use physical Stop, wait for rendering to finish, and leave the debugger running. A debugger halt can disturb acquisition timing.
+
 These checks preserve normal operation; they do not characterize noise rejection, absolute accuracy, all signal shapes, or all sampling conditions.
 
 ## Roadmap
@@ -222,9 +246,11 @@ Completed first-version milestones: display Run/Stop, Normal triggering, explici
 
 Completed display feedback: a pending-settings indicator with validation across Stop, Normal waiting, Single capture, and equivalent timebase/edge fallback requests.
 
+Completed rendering checkpoint: per-frame pixel instrumentation, larger SPI transfer batches, and narrower dirty strips, with clean hardware results at 4 and 2 ms/div. Further performance work requires separate measurements for other workloads.
+
 The next feature remains to be selected from the milestones below.
 
-Later milestones: pre-trigger viewing, rendering performance, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
+Later milestones: pre-trigger viewing, further rendering performance characterization, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
 
 Project documentation will include focused architecture, sequence, and state diagrams as useful. These are planned; they are not implemented features.
 

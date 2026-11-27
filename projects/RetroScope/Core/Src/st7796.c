@@ -289,7 +289,7 @@ void ST7796_DrawRGB565Buffer(uint16_t x, uint16_t y, uint16_t width,
 
   ST7796_WriteCommand(0x2C);
 
-  uint8_t tx_buffer[128];
+  static uint8_t tx_buffer[1024];
   uint32_t total_pixels = (uint32_t)width * height;
   uint32_t index = 0U;
 
@@ -299,7 +299,7 @@ void ST7796_DrawRGB565Buffer(uint16_t x, uint16_t y, uint16_t width,
   while (index < total_pixels) {
     uint16_t chunk = 0U;
 
-    while (chunk < 64U && index < total_pixels) {
+    while (chunk < (sizeof(tx_buffer) / 2U) && index < total_pixels) {
       uint16_t color = pixels[index++];
 
       tx_buffer[chunk * 2U] = (uint8_t)(color >> 8);

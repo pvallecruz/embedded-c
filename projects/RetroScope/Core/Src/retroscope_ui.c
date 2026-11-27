@@ -42,7 +42,7 @@
 #define WAVEFORM_SAMPLES RETROSCOPE_WAVEFORM_SAMPLES
 
 // Rendering buffer
-#define RENDER_STRIP_WIDTH 20U
+#define RENDER_STRIP_WIDTH 10U
 #define RENDER_BUFFER_WIDTH (RENDER_STRIP_WIDTH + 1U)
 #define RENDER_BUFFER_SIZE (RENDER_BUFFER_WIDTH * (GRID_HEIGHT + 1U))
 
@@ -54,6 +54,7 @@ static uint16_t NextStripX = GRID_X;
 static uint8_t FrameActive = 0U;
 
 volatile uint16_t StripsDrawn = 0U;
+volatile uint32_t PixelsDrawn = 0U;
 
 void RetroScope_DrawLayout(void) {
   // Clear entire screen
@@ -555,7 +556,7 @@ static uint8_t RetroScope_StripChanged(uint16_t start_x) {
 
   uint16_t first = start_x - GRID_X;
 
-  // Compare all 21 samples belonging to this strip.
+  // Compare the strip samples, including the shared endpoint.
   for (uint16_t i = 0; i <= RENDER_STRIP_WIDTH; i++) {
     uint16_t index = first + i;
 
@@ -635,8 +636,7 @@ static void RetroScope_DrawWaveformStrip(uint16_t start_x) {
     }
   }
 
-  // Our buffer uses a 21-pixel row stride.
-  // Pack active rows to match the LCD transfer width.
+  // Pack buffered rows to match the LCD transfer width.
   for (uint16_t y = 1; y < strip_height; y++) {
     for (uint16_t x = 0; x < strip_width; x++) {
       RenderBuffer[y * strip_width + x] =
@@ -646,6 +646,7 @@ static void RetroScope_DrawWaveformStrip(uint16_t start_x) {
 
   ST7796_DrawRGB565Buffer(start_x, strip_top, strip_width, strip_height,
                           RenderBuffer);
+  PixelsDrawn += (uint32_t)strip_width * strip_height;
 }
 
 uint8_t RetroScope_IsFrameActive(void) { return FrameActive; }
@@ -657,6 +658,7 @@ void RetroScope_BeginFrame(void) {
 
   NextStripX = GRID_X;
   StripsDrawn = 0U;
+  PixelsDrawn = 0U;
   FrameActive = 1U;
 }
 
