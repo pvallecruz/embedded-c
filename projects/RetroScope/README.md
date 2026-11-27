@@ -62,7 +62,20 @@ Repeated TIME, VOLTS, or EDGE actions at the selected endpoint leave the value u
 
 If SELECT and an adjustment event arrive in the same main-loop pass, the selection advances and the adjustment is ignored. If both adjustment events arrive in the same pass, neither is applied. These rules do not guarantee suppression of physical button combinations whose debounced events arrive in different passes.
 
-While stopped, SELECT remains responsive and −/+ update requested settings, but the waveform, scale labels, trigger direction/voltage, and marker continue describing the held frame. Changes become visible when a new frame is displayed. In Single mode, rearm to apply pending changes to the next capture. In Normal mode, a new qualifying capture is required. There is currently no separate indicator showing that a requested value differs from the held frame's value.
+While stopped, SELECT remains responsive and −/+ update requested settings, but the waveform, scale labels, trigger direction/voltage, and marker continue describing the held frame. Changes become visible when a new frame is displayed. In Single mode, rearm to apply pending changes to the next capture. In Normal mode, a new qualifying capture is required. The `PEND` indicator identifies requested settings that differ from those used for the held frame.
+
+### Pending-settings indicator
+
+`PEND` appears beside `SEL:` when any effective requested timebase, vertical scale, trigger edge, or trigger-center level differs from the corresponding setting recorded for the displayed frame. It applies to all four settings, not only the currently selected one. Changing SELECT alone does not create a pending change. Run/Stop and trigger mode are not part of this comparison.
+
+The comparison uses the same fallback and limiting rules as acquisition and rendering: unsupported timebases use 4 ms/div, unsupported vertical scales use full range, unsupported edges use rising, and trigger centers are constrained to 64–4031 ADC counts. A raw debugger value that resolves to the displayed setting does not create a false pending indication.
+
+- Before the first display frame, PEND remains blank because no frame settings are available for comparison.
+- While stopped or waiting in Normal mode, a changed setting can remain pending while the waveform and its labels stay held.
+- Restoring all effective requests to the held frame's settings clears PEND without requiring another capture.
+- After a new frame applies the requests, PEND clears at the next between-frame update. Single capture refreshes the waveform and measurements before automatically stopping; the indicator then reflects that completed capture.
+
+Display settings are recorded when a frame starts, and the indicator updates only between frames. It does not mark a partially rendered frame as complete or indicate that a trigger has been found; trigger status is shown separately.
 
 ### Input implementation
 
@@ -184,13 +197,32 @@ Hardware testing confirmed the following after clean builds:
 
 The requested Auto-mode adjustment checks confirmed approximately 200 Hz, unchanged input amplitude, and zero capture-drop/unsafe-capture counts during uninterrupted runs. Full-range restoration and trigger-center restoration were included in the tests. Startup-held checks for the original PE7/PE8 buttons are documented above; equivalent startup tests for PE9–PE11 and same-pass adjustment-event conflicts have not been separately validated on hardware.
 
+### Pending-settings checks (2026-11-27 checkpoint)
+
+Hardware testing confirmed the following after a clean build:
+
+| Check | Observed result |
+|---|---|
+| Auto, initial displayed frame | PEND remained blank when effective requests matched the displayed settings. |
+| Stopped TIME adjustment | Requesting 2 ms/div while holding a 4 ms/div frame showed PEND without changing the held scale label. |
+| Undo while stopped | Returning the request to 4 ms/div cleared PEND without resuming. |
+| Apply on resume | Resuming with a 2 ms/div request updated the waveform and scale label, then cleared PEND. |
+| Selection-only change | Changing SELECT while stopped did not show PEND. |
+| Normal waiting | A LEVEL increase showed PEND while the old voltage label and marker stayed held; restoring PWM allowed a triggered frame to apply the change and clear PEND. |
+| Single capture | An opposite-edge request showed PEND on the stopped capture; rearming applied the new edge and cleared PEND after the capture completed. |
+| Equivalent fallback requests | With a held 4 ms/div rising-edge frame, raw requests of 3000 us and edge value 2 left PEND blank because their effective values matched the frame. |
+
+Indicator placement and clean erasure were checked on the display. Vertical-scale fallback equivalence, trigger-limit equivalence, and multiple simultaneous pending settings are supported by the comparison logic but have not been separately hardware-validated for PEND.
+
 These checks preserve normal operation; they do not characterize noise rejection, absolute accuracy, all signal shapes, or all sampling conditions.
 
 ## Roadmap
 
 Completed first-version milestones: display Run/Stop, Normal triggering, explicitly armed Single capture, and five physical buttons covering Run/Stop/Single control, mode selection, timebase, vertical scale, trigger level, and trigger edge.
 
-Next: consider an indicator for requested settings that differ from the held waveform settings, with validation across Stop, Normal waiting, and Single capture.
+Completed display feedback: a pending-settings indicator with validation across Stop, Normal waiting, Single capture, and equivalent timebase/edge fallback requests.
+
+The next feature remains to be selected from the milestones below.
 
 Later milestones: pre-trigger viewing, rendering performance, calibration and input hardware, and additional measurements such as duty cycle, pulse width, average, and RMS.
 
