@@ -155,8 +155,12 @@ static uint8_t TriggerWaiting = 0U;
 static uint8_t SingleState = SINGLE_STATE_IDLE;
 // Selected setting for the shared decrease/increase buttons.
 static uint32_t SelectedSetting = RETROSCOPE_SETTING_TIMEBASE;
-
-
+// Settings associated with the frame selected for display.
+static uint32_t DisplayTimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
+static uint32_t DisplayVerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+static uint32_t DisplayTriggerEdge = ADC_TRIGGER_EDGE_RISING;
+static uint32_t DisplayTriggerLevel = ADC_TRIGGER_LEVEL;
+static uint8_t DisplaySettingsValid = 0U;
 
 /* USER CODE END PV */
 
@@ -170,6 +174,43 @@ static void RetroScope_ProcessAdcCapture(const uint16_t* Samples);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static uint8_t RetroScope_HasPendingSettings(void) {
+  if (DisplaySettingsValid == 0U) {
+    return 0U;
+  }
+
+  uint32_t TimebaseUs = RequestedTimebaseUs;
+  uint32_t VerticalScale = RequestedVerticalScale;
+  uint32_t TriggerEdge = RequestedTriggerEdge;
+  uint32_t TriggerLevel = RequestedTriggerLevel;
+
+  // Match the effective settings used by acquisition and rendering.
+  if (TimebaseUs != RETROSCOPE_TIMEBASE_2_MS) {
+    TimebaseUs = RETROSCOPE_TIMEBASE_4_MS;
+  }
+
+  if (VerticalScale != RETROSCOPE_VERTICAL_1_V_DIV) {
+    VerticalScale = RETROSCOPE_VERTICAL_FULL_RANGE;
+  }
+
+  if (TriggerEdge != ADC_TRIGGER_EDGE_FALLING) {
+    TriggerEdge = ADC_TRIGGER_EDGE_RISING;
+  }
+
+  if (TriggerLevel < ADC_TRIGGER_HYSTERESIS) {
+    TriggerLevel = ADC_TRIGGER_HYSTERESIS;
+  } else if (TriggerLevel > ADC_MAX_COUNT - ADC_TRIGGER_HYSTERESIS) {
+    TriggerLevel = ADC_MAX_COUNT - ADC_TRIGGER_HYSTERESIS;
+  }
+
+  return (TimebaseUs != DisplayTimebaseUs ||
+          VerticalScale != DisplayVerticalScale ||
+          TriggerEdge != DisplayTriggerEdge ||
+          TriggerLevel != DisplayTriggerLevel)
+             ? 1U
+             : 0U;
+}
 
 static void RetroScope_MeasureFrequency(const uint16_t* Samples) {
   uint16_t FirstEdge = 0U;
@@ -478,6 +519,8 @@ int main(void)
 
       RetroScope_UpdateSelectedSetting(SelectedSetting);
 
+      RetroScope_UpdatePendingSettings(RetroScope_HasPendingSettings());
+
       if (DisplayRunning != 0U && TriggerWaiting != 0U) {
         RetroScope_UpdateTriggerStatus(0U, 1U);
       }
@@ -535,6 +578,13 @@ int main(void)
             SingleState == SINGLE_STATE_CAPTURED) {
           SingleState = SINGLE_STATE_RENDERING;
         }
+        // Record the effective settings used for this frame.
+        DisplayTimebaseUs = TimebaseUs;
+        DisplayVerticalScale = VerticalScale;
+        DisplayTriggerEdge = SnapshotTriggerEdge;
+        DisplayTriggerLevel = SnapshotTriggerLevel;
+        DisplaySettingsValid = 1U;
+
         RetroScope_BeginFrame();
       }
     }

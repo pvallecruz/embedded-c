@@ -132,6 +132,30 @@ void RetroScope_DrawLabels(void) {
   ST7796_DrawString(260, 298, "VPP: -- V", ST7796_WHITE, 2);
 }
 
+void RetroScope_UpdatePendingSettings(uint8_t Pending) {
+  static uint8_t PreviousPending = 0U;
+  static uint8_t DisplayInitialized = 0U;
+
+  if (FrameActive != 0U) {
+    return;
+  }
+
+  Pending = (Pending != 0U) ? 1U : 0U;
+
+  if (DisplayInitialized != 0U && Pending == PreviousPending) {
+    return;
+  }
+
+  ST7796_FillRect(84, 25, 24, 7, UI_PANEL_COLOR);
+
+  if (Pending != 0U) {
+    ST7796_DrawString(84, 25, "PEND", ST7796_WHITE, 1);
+  }
+
+  PreviousPending = Pending;
+  DisplayInitialized = 1U;
+}
+
 void RetroScope_UpdateSelectedSetting(uint32_t Setting) {
   static uint32_t PreviousSetting = 0U;
   static uint8_t DisplayInitialized = 0U;

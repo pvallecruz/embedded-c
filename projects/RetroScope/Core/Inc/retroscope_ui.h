@@ -45,5 +45,6 @@ void RetroScope_UpdateTriggerStatus(uint8_t Triggered, uint8_t Waiting);
 void RetroScope_UpdateRunStatus(uint8_t Running);
 void RetroScope_UpdateTriggerMode(uint32_t Mode);
 void RetroScope_UpdateSelectedSetting(uint32_t Setting);
+void RetroScope_UpdatePendingSettings(uint8_t Pending);
 
 #endif /* INC_RETROSCOPE_UI_H_ */
